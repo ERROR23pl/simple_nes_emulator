@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["nes_frontend", "nes_backend"]
+
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2
+
