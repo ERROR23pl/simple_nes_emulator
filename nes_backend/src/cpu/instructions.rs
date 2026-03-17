@@ -330,7 +330,7 @@ macro_rules! compare {
     ($self:ident, $register:expr, $ret:literal) => {
         {
             $self.fetch();
-            let temp = ($register as u16) - ($self.fetched as u16);
+            let temp = ($register as i16) - ($self.fetched as i16);
             $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
             $self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
             $self.set_flag(StatusFlag::Negative, temp & 0x0080 != 1);
@@ -368,8 +368,9 @@ macro_rules! load {
 impl CPU {
     #[must_use]
     pub fn operate(&mut self, instr: Instruction) -> bool {
-        use InstructionType as IT;
+        println!("executing: {}", instr.type_());
         
+        use InstructionType as IT;
         match instr.type_ {
             IT::ADC => {
                 self.fetch();
@@ -715,7 +716,10 @@ impl CPU {
                 false
             },
 
-            IT::INVALID => false,
+            IT::INVALID => {
+                println!("executed an invalid operation.");
+                false
+            },
         }
     }    
 }

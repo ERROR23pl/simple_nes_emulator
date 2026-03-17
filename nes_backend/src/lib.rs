@@ -1,15 +1,15 @@
+pub mod file_loading;
 mod emulator;
-mod file_loading;
 mod bit_operations;
-mod rendering;
+pub mod rendering;
 mod implementations;
 mod utils;
 
-mod nes;
-mod cpu;
+pub mod nes;
+pub mod cpu;
 mod bus;
 mod ppu;
-mod cartridge;
+pub mod cartridge;
 mod mapper;
 
 // const MARIO_PATH: &str = "./roms/Super Mario Bros. (World).nes";

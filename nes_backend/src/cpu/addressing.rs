@@ -1,7 +1,7 @@
 use super::*;
 use crate::bit_operations::get_high_byte;
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default, strum_macros::Display)]
 pub enum AddressingMode {
     #[default]
     IMP,

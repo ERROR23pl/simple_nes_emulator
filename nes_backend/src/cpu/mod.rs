@@ -1,6 +1,6 @@
 mod instructions;
 mod addressing;
-
+pub mod disassembler;
 
 // use std::{u16};
 
@@ -10,6 +10,8 @@ use crate::{
 use addressing::*;
 use instructions::*;
 
+
+#[derive(derive_getters::Getters)]
 pub struct CPU {
     // actual registers on the 6502
     acc: u8,
@@ -64,7 +66,7 @@ impl CPU {
         };
 
         // todo: uncomment when this stops crushing
-        // cpu.reset();
+        cpu.reset();
 
         cpu
     }
@@ -95,12 +97,13 @@ impl CPU {
 
     // returns `true` if the execution needs another cycle
     fn execute(&mut self, instruction: Instruction) -> bool {
-        self.find_data(*instruction.mode()) && self.operate(instruction)
+        let data_needs_cycle = self.find_data(*instruction.mode());
+        let operation_needs_cycle = self.operate(instruction);
+
+        data_needs_cycle && operation_needs_cycle
     }
 
     pub fn clock(&mut self) {
-        self.print_intructions(5);
-
         if self.cycles == 0 {
             self.opcode = self.read(self.program_counter, false);
             self.program_counter += 1;
@@ -228,38 +231,5 @@ impl CPU {
         let high_byte = self.read(self.addr_abs + 1, false);
 
         glue_u8s(high_byte, low_byte)
-    }
-}
-
-// * debug functions
-impl CPU {
-    pub fn print_intructions(&self, len: u16) {
-        use addressing::AddressingMode as AM;
-        let lower_bound = self.program_counter.checked_sub(len).unwrap_or(0);
-        let mut upper_bound = self.program_counter.checked_add(len).unwrap_or(u16::MAX);
-        
-        let mut fake_pc = lower_bound;
-        while fake_pc <= upper_bound {
-            let instr = INSTRUCTION_LOOKUP[self.read(fake_pc, false) as usize];
-            let bytes = match instr.mode() {
-                AM::IMP => 0,
-                AM::IMM | AM::ZP0 | AM::ZPX | AM::ZPY | AM::REL => 1,
-                AM::ABS | AM::ABX | AM::ABY | AM::IND | AM::IZX | AM::IZY => 2,
-            };
-
-            upper_bound += bytes;
-            if fake_pc == self.program_counter {
-                print!("> ")
-            }
-            print!("{}", instr.type_());
-            match bytes {
-                0 => { println!(); },
-                1 => { println!("{}", self.read(fake_pc + 1, false)); },
-                2 => { println!("{} | {}", self.read(fake_pc + 1, false), self.read(fake_pc + 2, false)); },
-                3.. => unreachable!(),
-            }
-
-            fake_pc += 1 + bytes;
-        }
     }
 }

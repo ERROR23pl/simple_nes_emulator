@@ -1,9 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use crate::{
     bus::Bus, cartridge::Cartridge, cpu::CPU, ppu::PPU, rendering::PixelBuffer
 };
 
+
+#[derive(derive_getters::Getters)]
 pub struct NES<P: PixelBuffer> {
     cpu: CPU,
     ppu: PPU<P>,
@@ -28,7 +30,7 @@ impl<P: PixelBuffer> NES<P> {
 
     // * PPU clock is 3x faster than CPU clock
     pub fn clock(&mut self) {
-        self.ppu.clock();
+        // self.ppu.clock();
 
         if self.clock_count % 3 == 0 {
             self.cpu.clock();

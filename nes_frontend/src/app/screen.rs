@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use egui::{
-    Color32, ColorImage, ImageData, TextureHandle, TextureOptions
-};
+use egui::{ Color32, ColorImage, ImageData, TextureHandle, TextureOptions };
 
 pub struct Screen {
     pub handle: TextureHandle,
@@ -18,19 +16,63 @@ impl Screen {
         
         Screen { handle, buffer }
     }
-    
-    pub fn update_image(&mut self, color: [u8; 3], frame: &mut usize) {
+}
+
+// * debuing functions
+impl Screen {
+    pub fn color_flicker(&mut self, color: [u8; 3], frame_count: &mut usize) {
         let [width, height] = self.handle.size();
 
         self.buffer = vec![color; width * height].into_iter().flatten().collect();
         let mut image = ColorImage::from_rgb([width, height], &self.buffer);
         
         for row in 0..height {
-            image[((*frame + row) % width, row)] = Color32::BLACK;
+            image[((*frame_count + row) % width, row)] = Color32::BLACK;
         }
         
         self.handle.set(image, TextureOptions::default());
         
-        *frame = (*frame + 1) % width;
+        *frame_count = (*frame_count + 1) % width;
+    }
+}
+
+use nes_backend::rendering::*;
+
+pub struct DummyCanvas;
+
+impl Default for DummyCanvas {
+    fn default() -> Self {
+        Self {  }
+    }
+}
+
+
+impl PixelBuffer for DummyCanvas {
+    fn get_pixel(&self, x: usize, y: usize) -> NesColor {
+        todo!()
+    }
+
+    fn set_pixel(&mut self, x: usize, y: usize, color: NesColor) {
+        todo!()
+    }
+
+    fn get(&self, index: usize) -> NesColor {
+        todo!()
+    }
+
+    fn set(&mut self, index: usize, color: NesColor) {
+        todo!()
+    }
+
+    fn get_pixel_pattern_table(&self, pattern_table: PatternTable, x: usize, y: usize) -> NesColor {
+        todo!()
+    }
+
+    fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor) {
+        todo!()
+    }
+
+    fn render_frame(&mut self) {
+        todo!()
     }
 }

@@ -1604,6 +1604,7 @@ dependencies = [
  "egui",
  "env_logger",
  "log",
+ "nes_backend",
  "rfd",
  "serde",
  "wasm-bindgen-futures",

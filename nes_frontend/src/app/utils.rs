@@ -24,3 +24,10 @@ impl<T, const L: usize> FixedSizeQueue<T, L> {
         }
     }
 }
+
+impl<T: PartialEq, const L: usize> FixedSizeQueue<T, L> {
+    pub fn push_without_duplicates(&mut self, element: T) -> Option<T> {
+        self.0.retain(|r| *r != element);
+        self.push(element)
+    }
+}

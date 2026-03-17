@@ -15,6 +15,7 @@ pub struct Bus {
 
 macro_rules! RAM_RANGE { () => { 0x0000..0x2000 }; }
 macro_rules! PPU_RANGE { () => { 0x2000..0x4000 }; }
+macro_rules! PROGRAM_ROM_RANGE { () => { 0x4020..=0xFFFF }; }
 
 impl Bus {
     pub fn new(cartridge: Cartridge) -> Self {
@@ -34,17 +35,19 @@ impl Bus {
 
     pub fn cpu_write(&mut self, address: u16, data: u8) {
         match address {
-            RAM_RANGE!() => { self.cpu_ram[(address & 0x7FFF) as usize] = data } // & 0x7FFF implements mirroring
-            PPU_RANGE!() => { self.cpu_to_ppu_write(address & 0x0007, data) } // 0x0007 implements mirroring
-            _ => todo!(),
+            RAM_RANGE!() => { self.cpu_ram[(address & 0x7FFF) as usize] = data }, // & 0x7FFF implements mirroring
+            PPU_RANGE!() => { self.cpu_to_ppu_write(address & 0x0007, data) }, // 0x0007 implements mirroring
+            PROGRAM_ROM_RANGE!() => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
+            _ => { println!("attempted to write to memory that wasn't yet implemented. Not doing anything.") },
         }
     }
-
+    
     pub fn cpu_read(&self, address: u16, read_only: bool /* ? What is this flag for? */) -> u8 {
         match address {
             RAM_RANGE!() => self.cpu_ram[(address & 0x7FFF) as usize],
             PPU_RANGE!() => self.cpu_from_ppu_read(address & 0x0007),
-            _ => todo!(), 
+            PROGRAM_ROM_RANGE!() => self.cartridge.cpu_read(address), // todo: is this correct?
+            _ => { println!("attempted to read from memory that wasn't yet implemented. returning 0."); 0 },
         }
     } 
 

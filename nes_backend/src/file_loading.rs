@@ -1,4 +1,5 @@
 use std::fs::File;
+use std::path::Path;
 use std::{fmt::{Debug, Display}, io::{self, Read}, ops::Deref};
 
 use modular_bitfield::prelude::*;
@@ -69,7 +70,7 @@ pub enum NametableArrangement {
 }
 
 impl INesFile {
-    pub fn new_from_file_path(location: &str) -> io::Result<INesFile> {
+    pub fn new_from_file_path(location: impl AsRef<Path>) -> io::Result<INesFile> {
         let mut file = File::open(location)?;
 
         let header = INesFileHeader::new_from_file(&mut file)?;
@@ -155,7 +156,8 @@ impl INesFileHeader {
         }
 
         // flags 6
-        let nametable_arrangement = if flags6.nth_flag::<0>() { NametableArrangement::Vertical } else { NametableArrangement::Horizontal };
+        use NametableArrangement as NA;
+        let nametable_arrangement = if flags6.nth_flag::<0>() { NA::Vertical } else { NA::Horizontal };
         let contains_battery_ram = flags6.nth_flag::<1>();
         let trainer_present = flags6.nth_flag::<2>();
         let alternative_nametable_layout = flags6.nth_flag::<3>();
@@ -195,7 +197,7 @@ impl INesFileHeader {
             flags9: flags9.clone(),
             flags10: flags10.clone(),
             
-            // unused padding, but some dumpers populate it. Just for completenes.
+            // unused padding, but some dumpers populate it. Just for completenes I include it.
             padding: [padding[0], padding[1], padding[2], padding[3], padding[4]],
         })
     }
