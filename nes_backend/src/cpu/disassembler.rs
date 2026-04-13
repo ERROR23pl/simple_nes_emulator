@@ -1,8 +1,9 @@
 use std::fmt::Display;
 
 use super::*;
-use crate::{bit_operations, file_loading::INesFile, utils};
+use crate::{bit_operations, cartridge::Cartridge, file_loading::INesFile, utils};
 
+use log::debug;
 
 pub enum Argument {
     Small(u8),
@@ -25,7 +26,10 @@ impl Display for DisassembledInstruction {
                 write!(f, "      ")?;
             },
             Some(Argument::Small(arg)) => {
-                write!(f, "   ${:02X}", arg)?;
+                match self.mode() {
+                    AddressingMode::REL => { write!(f, " ${:04}", arg as i8)?; },
+                    _ => { write!(f, "   ${:02X}", arg)?; },
+                }
             },
             Some(Argument::Big(arg)) => {
                 write!(f, " ${:04X}", arg)?;
@@ -37,16 +41,16 @@ impl Display for DisassembledInstruction {
     }
 }
 
-
-impl INesFile {
+impl Cartridge {
     pub fn disassemble(&self) -> Vec<DisassembledInstruction> {
-        let bytes = self.prg_rom_data();
+        let bytes = self.prg_memory();
         let mut result = Vec::new();
+        debug!("length: {}", result.len());
 
         let mut address = 0;
-        while address < self.prg_rom_data().len() {
+        while address < bytes.len() - 2 {
             let instr = INSTRUCTION_LOOKUP[bytes[address] as usize];
-            
+
             use AddressingMode as AM;
             result.push(DisassembledInstruction {
                 address,
@@ -54,14 +58,14 @@ impl INesFile {
                 mode: *instr.mode(),
                 argument: match instr.mode() {
                     AM::IMP => None,
-                    AM::IMM | AM::ZP0 | AM::ZPX | AM::ZPY | AM::REL => {
+                    AM::IMM | AM::ZP0 | AM::ZPX | AM::ZPY | AM::REL | AM::IZX | AM::IZY => {
                         address += 1;
                         let value = bytes[address];
                         Some(Argument::Small(value))
                     },
-                    AM::ABS | AM::ABX | AM::ABY | AM::IND | AM::IZX | AM::IZY => {
+                    AM::ABS | AM::ABX | AM::ABY | AM::IND => {
                         address += 1;
-                        let low_byte = bytes[address];
+                        let low_byte = bytes[address]; 
                         address += 1;
                         let high_byte = bytes[address];
                         Some(Argument::Big(bit_operations::glue_u8s(high_byte, low_byte)))

@@ -10,6 +10,8 @@ use crate::{
 use addressing::*;
 use instructions::*;
 
+use modular_bitfield::bitfield;
+use log::debug;
 
 #[derive(derive_getters::Getters)]
 pub struct CPU {
@@ -24,7 +26,8 @@ pub struct CPU {
     // helper variables
     fetched: u8,
     addr_abs: u16,
-    addr_rel: u16,
+    // addr_rel: u16,
+    addr_rel: i8,
     opcode: u8,
     cycles: u8,
 
@@ -62,15 +65,29 @@ impl CPU {
             opcode: 0,
             cycles: 0,
 
+            // connection to the rest of the architecture
             bus: bus,
         };
 
-        // todo: uncomment when this stops crushing
         cpu.reset();
 
         cpu
     }
  
+}
+
+// for now it's used only for printing
+#[bitfield(bits=8)]
+#[derive(Debug)]
+pub struct Status {
+    carry: bool,
+    zero: bool,
+    disableinterupts: bool,
+    decimalmode: bool,
+    break_: bool,
+    unused: bool,
+    overflow: bool,
+    negative: bool,
 }
 
 // * Core functionality
@@ -83,12 +100,12 @@ impl CPU {
         }
     }
 
-    fn get_flag(&self, flag: StatusFlag) -> bool {
+    pub fn get_flag(&self, flag: StatusFlag) -> bool {
         self.status & (flag as u8) != 0
     }
 
     fn read(&self, address: u16, read_only: bool) -> u8 {
-        self.bus.borrow().cpu_read(address, read_only)
+        self.bus.borrow_mut().cpu_read(address, read_only)
     }
 
     fn write(&mut self, address: u16, data: u8) {
@@ -97,18 +114,24 @@ impl CPU {
 
     // returns `true` if the execution needs another cycle
     fn execute(&mut self, instruction: Instruction) -> bool {
+        debug!("executing instruction");
+        debug!("finding data");
         let data_needs_cycle = self.find_data(*instruction.mode());
+        debug!("executing operation");
         let operation_needs_cycle = self.operate(instruction);
-
+        
         data_needs_cycle && operation_needs_cycle
     }
 
     pub fn clock(&mut self) {
         if self.cycles == 0 {
+            debug!("cycles == 0, preparing for next instruction");
             self.opcode = self.read(self.program_counter, false);
+            debug!("loaded opcode {} from address {}", self.opcode, self.program_counter);
             self.program_counter += 1;
 
             let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
+            debug!("decoded as {} in {} mode", instruction.type_(), instruction.mode());
             
             self.cycles = instruction.cycles();
             self.cycles += self.execute(instruction) as u8; // add one cycle if returns true
@@ -124,12 +147,11 @@ impl CPU {
     pub fn reset(&mut self) {
         // Get address to set program counter to
         self.addr_abs = 0xFFFC;
-        let low_byte = self.read(self.addr_abs, false);
+        let low_byte = self.read(self.addr_abs, false); // todo: I have a function for this self.read_addr_abs_twice()
         let high_byte = self.read(self.addr_abs + 1, false);
-
+        
         // Set it
         self.program_counter = glue_u8s(high_byte, low_byte);
-
         // Reset internal registers
         self.acc = 0;
         self.reg_x = 0;
@@ -144,6 +166,8 @@ impl CPU {
 
         // Reset takes time
         self.cycles = 8;
+
+        debug!("CPU has been reset.");
     }
 
     #[inline]
@@ -168,7 +192,7 @@ impl CPU {
         // let low_byte = self.read(self.addr_abs, false);
         // let high_byte = self.read(self.addr_abs + 1, false);
         // self.program_counter = glue_u8s(high_byte, low_byte);
-        self.program_counter = self.read_addr_abs_twice()
+        self.program_counter = self.read_u16_at_addr_abs()
     }
 
     pub fn interupt_request(&mut self) {
@@ -188,6 +212,7 @@ impl CPU {
         
         if *instruction.mode() != AddressingMode::IMP {
             self.fetched = self.read(self.addr_abs, false);
+            debug!("cpu.fetch() | fetched value {} from address {}", self.fetched, self.addr_abs);
         }
         
         self.fetched
@@ -206,7 +231,7 @@ impl CPU {
         }
     }
 
-    fn read_next_and_clock(&mut self) -> u8 {
+    fn read_next_u8_and_clock(&mut self) -> u8 {
         self.program_counter += 1;
         self.read(self.program_counter - 1, false)
     }
@@ -221,12 +246,12 @@ impl CPU {
     }
 
     #[inline]
-    fn read_addr_abs(&self) -> u8 {
+    fn read_u8_at_addr_abs(&self) -> u8 {
         self.read(self.addr_abs, false)
     }
 
     #[inline]
-    fn read_addr_abs_twice(&self) -> u16 {
+    fn read_u16_at_addr_abs(&self) -> u16 {
         let low_byte = self.read(self.addr_abs, false);
         let high_byte = self.read(self.addr_abs + 1, false);
 

@@ -312,7 +312,7 @@ macro_rules! branch_if {
         {
             if $self.get_flag($flag) == $bool {
                 $self.cycles += 1;
-                $self.addr_abs = $self.program_counter + $self.addr_rel;
+                $self.addr_abs = (($self.program_counter as i32) + ($self.addr_rel as i32)) as u16;
                 
                 if ($self.addr_abs & 0xFF00) != ($self.program_counter & 0xFF00) {
                     $self.cycles += 1;
@@ -368,8 +368,6 @@ macro_rules! load {
 impl CPU {
     #[must_use]
     pub fn operate(&mut self, instr: Instruction) -> bool {
-        println!("executing: {}", instr.type_());
-        
         use InstructionType as IT;
         match instr.type_ {
             IT::ADC => {
@@ -495,8 +493,8 @@ impl CPU {
                 false
             },
             
-            IT::DEX => { self.reg_x -= 1; incr_flags!(self, self.reg_x) },
-            IT::DEY => { self.reg_y -= 1; incr_flags!(self, self.reg_y) },
+            IT::DEX => { self.reg_x = self.reg_x.wrapping_sub(1); incr_flags!(self, self.reg_x) },
+            IT::DEY => { self.reg_y = self.reg_y.wrapping_sub(1); incr_flags!(self, self.reg_y) },
             
             IT::EOR => {
                 self.fetch();

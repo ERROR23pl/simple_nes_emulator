@@ -6,8 +6,8 @@ use modular_bitfield::prelude::*;
 
 use crate::bit_operations::GetBits;
 
-const PRG_BANK_SIZE: usize = 1 << 14;
-const CHR_BANK_SIZE: usize = 1 << 13;
+pub const PRG_BANK_SIZE: usize = 1 << 14;
+pub const CHR_BANK_SIZE: usize = 1 << 13;
 
 // todo: make this more readable
 #[derive(Debug, derive_getters::Getters)]

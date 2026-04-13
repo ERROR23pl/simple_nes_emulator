@@ -1589,7 +1589,9 @@ name = "nes_backend"
 version = "0.1.0"
 dependencies = [
  "derive-getters",
+ "env_logger",
  "error-iter",
+ "log",
  "minifb",
  "modular-bitfield",
  "strum",
