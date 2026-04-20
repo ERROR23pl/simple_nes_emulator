@@ -1,7 +1,5 @@
 use modular_bitfield::prelude::*;
 
-use std::cell::Cell;
-
 // todo: I'm not sure about all thatk
 #[derive(Default)]
 pub struct PPUControlRegisters {
@@ -23,7 +21,6 @@ pub struct PPUControlRegisters {
     // helper variables
     pub writing_part: WritingAddressPart,
     pub data_buffer: u8,
-    // pub address: u16, // actually 14 or 15 bits?,
 }
 
 #[derive(Default)]
@@ -85,19 +82,18 @@ pub struct PPULoopy {
 }
 
 impl PPULoopy {
-    pub fn increment(&mut self, value: i32) {
-        *self = PPULoopy::from(u16::from(*self) + value as u16);
+    pub fn increment(&mut self, value: u16) {
+        *self = PPULoopy::from(u16::from(*self).wrapping_add(value));
+    }
+
+    pub fn map<R>(&self, function: fn(u16) -> R) -> R {
+        function(u16::from(self.clone()))
+    }
+
+    pub fn dissolve_u16(&self) -> (u16, u16, u16, u16, u16) {
+        (self.fine_y() as u16, self.nametable_y() as u16, self.nametable_x() as u16, self.coarse_y() as u16, self.coarse_x() as u16)
     }
 }
-
-pub const CONTROL: u16 = 0;
-pub const MASK: u16 = 1;
-pub const STATUS: u16 = 2;
-pub const OAM_ADDRESS: u16 = 3;
-pub const OAM_DATA: u16 = 4;
-pub const SCROLL: u16 = 5;
-pub const PPU_ADDRESS: u16 = 6;
-pub const PPU_DATA: u16 = 7;
 
 // helper functions
 impl PPUControlRegisters {
@@ -107,5 +103,24 @@ impl PPUControlRegisters {
             WP::High => WP::Low,
             WP::Low => WP::High,
         }
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modular_bitfield_test() {
+        assert_eq!(0b0_000_00_00000_10100, u16::from(PPULoopy::new().with_coarse_x(0b10100)));
+        assert_eq!(0b0_000_00_10100_00000, u16::from(PPULoopy::new().with_coarse_y(0b10100)));
+        assert_eq!(0b0_000_01_00000_00000, u16::from(PPULoopy::new().with_nametable_x(true)));
+        assert_eq!(0b0_000_10_00000_00000, u16::from(PPULoopy::new().with_nametable_y(true)));
+        assert_eq!(0b0_100_00_00000_00000, u16::from(PPULoopy::new().with_fine_y(0b100)));
+        assert_eq!(0b0_100_01_00100_01000, u16::from(PPULoopy::from(0b0_100_01_00100_01000)));
+        assert_eq!(0x00FF, u16::from(PPULoopy::from_bytes([0xFF, 0x00])));
+        assert_eq!([0xFF, 0x00], PPULoopy::from(0x00FF).into_bytes());
     }
 }

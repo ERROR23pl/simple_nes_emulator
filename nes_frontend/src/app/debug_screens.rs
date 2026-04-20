@@ -1,7 +1,5 @@
-use std::cell;
-
 use egui::{FontId, Ui};
-use nes_backend::cpu::StatusFlag;
+use nes_backend::cpu::{CPU_RAM_SIZE, StatusFlag};
 
 impl crate::App {
     pub fn debug_windows(&mut self, ctx: &egui::Context) {
@@ -73,7 +71,7 @@ impl crate::App {
                 
 
                 // let binary_index = instructions.binary_search_by(|i| i.address().cmp(&program_counter));
-                let mapped_pc = nes.cpu().bus().borrow().get_cartridge().mapper().map_cpu_read(program_counter as u16);
+                let mapped_pc = nes.cpu().cartridge().mapper().map_cpu_read(program_counter as u16);
                 let Some(index) = instructions.iter()
                     .position(|i|  mapped_pc as usize == i.address()) else { return; };
 
@@ -109,11 +107,9 @@ impl crate::App {
             .resizable(true)
             .show(ctx, |ui| {
                 let Some(ref mut nes) = self.nes else { return; };
-                let mut bus = nes.cpu().bus().borrow_mut();
-                let ram = bus.get_mut_cpu_ram();
+                let ram = nes.get_mut_cpu_ram();
                 const PAGE_SIZE: usize = 256;
-                const RAM_SIZE: usize = 2048;
-                const PAGE_NUMBER: usize = RAM_SIZE / PAGE_SIZE;
+                const PAGE_NUMBER: usize = CPU_RAM_SIZE / PAGE_SIZE;
                 let current_page = self.debug_state.ram_page_number;
                 
                 ui.vertical(|ui| {

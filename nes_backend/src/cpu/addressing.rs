@@ -19,9 +19,8 @@ pub enum AddressingMode {
 }
 
 // todo: remove all & 0x00FF -- they are not needed in Rust
-impl CPU {
+impl<P: PixelBuffer> CPU<P> {
     pub fn find_data(&mut self, mode: AddressingMode) -> bool {
-        debug!("finding data with {} addresing mode", mode);
         use AddressingMode as AM;
         let may_need_another_cycle = match mode {
             AM::IMP => {
@@ -31,7 +30,6 @@ impl CPU {
             },
 
             AM::IMM => {
-                debug!("before doing addresing, self.pc = {}", self.program_counter);
                 self.addr_abs = self.program_counter;
                 self.program_counter += 1;
                 
@@ -62,14 +60,14 @@ impl CPU {
                 false
             },
 
-            // todo: what?
+            // todo: perhaps I fucked up this relative addressing thing?
             AM::REL => {
-                self.addr_rel = self.read(self.program_counter, false) as i8;
+                self.addr_rel = self.read(self.program_counter, false) as u16/* as i8 */;
                 self.program_counter += 1;
 
-                // if self.addr_rel & 0x80 != 0 {
-                //     self.addr_rel |= 0xFF00;
-                // }
+                if self.addr_rel & 0x80 != 0 {
+                    self.addr_rel |= 0xFF00;
+                }
 
                 false
             },
@@ -166,19 +164,19 @@ impl CPU {
             },
         };
         
-        match mode {
-            AM::IMP => {
-                debug!("data source is implied.");
-            },
+        // match mode {
+        //     AM::IMP => {
+        //         debug!("data source is implied.");
+        //     },
 
-            AM::REL => {
-                debug!("addr_rel = {}", self.addr_rel);
-            },
+        //     AM::REL => {
+        //         debug!("addr_rel = {}", self.addr_rel);
+        //     },
 
-            _ => {
-                debug!("addr_abs = ${:04X}", self.addr_abs);
-            },
-        };
+        //     _ => {
+        //         debug!("addr_abs = ${:04X}", self.addr_abs);
+        //     },
+        // };
 
         may_need_another_cycle
     }

@@ -36,6 +36,14 @@ pub fn glue_u8s(high_byte: u8, low_byte: u8) -> u16 {
 }
 
 #[inline]
+pub fn split_u16(whole: u16) -> (u8, u8) {
+    let low_byte = (whole & 0x00FF) as u8;
+    let high_byte = get_high_byte(whole);
+    
+    (high_byte, low_byte) 
+}
+
+#[inline]
 pub fn get_high_byte(number: u16) -> u8 {
     ((number & 0xFF00) >> 8) as u8
 }

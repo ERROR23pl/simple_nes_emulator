@@ -57,6 +57,7 @@ impl Screen {
     }
 }
 
+use log::debug;
 use nes_backend::rendering::{self, *};
 
 #[derive(Default)]
@@ -80,18 +81,6 @@ impl PixelBuffer for DummyCanvas {
         unimplemented!("You're not supposed to write on a DummyCanvas");
     }
 
-    fn get_pixel_pattern_table(&self, pattern_table: PatternTable, x: usize, y: usize) -> NesColor {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor) {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn render_frame(&mut self) {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-    
     fn into_slice(&self) -> &[NesColor] {
         todo!()
     }
@@ -115,7 +104,7 @@ impl BasicPixelBuffer {
     }
     
     fn coor_to_index(&self, x: usize, y: usize) -> usize {
-        y * self.height + x
+        y * self.width + x
     }
 
     fn index_to_coor(&self, index: usize) -> (usize, usize) {
@@ -126,11 +115,15 @@ impl BasicPixelBuffer {
 impl PixelBuffer for BasicPixelBuffer {
     fn get_pixel(&self, x: usize, y: usize) -> NesColor {
         debug_assert!(self.coor_to_index(x, y) < self.buffer.len());
+        debug_assert!(x < self.width);
+        debug_assert!(y < self.height);
         self.buffer[self.coor_to_index(x, y)]
     }
-
+    
     fn set_pixel(&mut self, x: usize, y: usize, color: NesColor) {
         debug_assert!(self.coor_to_index(x, y) < self.buffer.len());
+        debug_assert!(x < self.width);
+        debug_assert!(y < self.height);
         let coor = self.coor_to_index(x, y);
         self.buffer[coor] = color;
     }
@@ -145,18 +138,6 @@ impl PixelBuffer for BasicPixelBuffer {
         self.buffer[index] = color;
     }
 
-    fn get_pixel_pattern_table(&self, pattern_table: PatternTable, x: usize, y: usize) -> NesColor {
-        todo!()
-    }
-
-    fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor) {
-        todo!()
-    }
-
-    fn render_frame(&mut self) {
-        todo!()
-    }
-    
     fn into_slice(&self) -> &[NesColor] {
         &self.buffer
     }

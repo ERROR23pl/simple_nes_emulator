@@ -87,6 +87,7 @@ impl Default for DebugState {
 //     }
 // }
 
+
 impl App {
     pub fn default_with_context(cc: &eframe::CreationContext<'_>) -> Self {
         Self {
@@ -121,8 +122,19 @@ impl eframe::App for App {
         ctx.request_repaint();
         // self.nes_screen.as_mut().unwrap().color_flicker(self.test_color, &mut self.frame);
 
-        if let (Some(nes), Some(_)) = (&mut self.nes, self.debug_state.run_speed) {
-            nes.clock();
+        if let (Some(nes), Some(speed)) = (&mut self.nes, self.debug_state.run_speed) {
+            // for _ in 0..speed {
+            //     nes.clock()
+            // };
+           
+            while !nes.cpu().ppu.frame_complete { nes.clock() };
+            self.nes_screen.as_mut().unwrap().update_with_pixel_buffer(&nes.cpu().ppu().screen);
+            *(&mut nes.cpu.ppu.frame_complete) = false;
+
+
+            nes.render_debug_pattern_table(PatternTable::Left, self.debug_state.chosen_debug_palette);
+            nes.render_debug_pattern_table(PatternTable::Right, self.debug_state.chosen_debug_palette);
+            self.pattern_screen.as_mut().unwrap().update_with_pixel_buffer(&nes.cpu.ppu.pattern_table_screen);
         }
       
 
@@ -132,7 +144,7 @@ impl eframe::App for App {
             .resizable(false)
             .id("nes_window".into())
             // .vscroll(false)
-            .resizable(true)
+            // .resizable(true)
             .min_width(256.0)
             .min_height(240.0)
             .show(ctx, |ui| {
@@ -145,12 +157,7 @@ impl eframe::App for App {
                     None => { ui.label("unable to render the debug screen. Something went wrong."); },
                 }
             });
-
-        let Some(ref mut pattern_screen) = self.pattern_screen else { return; };
-        if let Some(ref mut nes) = self.nes {
-            nes.get_mut_ppu().render_debug_pattern_table(PatternTable::Left, 1);
-            nes.get_mut_ppu().render_debug_pattern_table(PatternTable::Right, 1);
-        }
+        
  
         egui::Window::new("Pattern Memory")
             .resizable(false)
@@ -160,19 +167,19 @@ impl eframe::App for App {
             .min_height(128.0)
             .min_width(256.0)
             .show(ctx, |ui| {
-                // ui.horizontal(|ui| {
-                //     for i in 0..=7 {
-                //         ui.radio_value(&mut self.debug_state.chosen_debug_palette, i, format!("#{}", i));
-                //         let Some(ref nes) = self.nes else { return; };
-                //         for j in 0..=3 {
-                //             ui.label(RichText::from("■").color({
-                //                 let nes_color = nes.ppu().get_color_value_from_pallet_ram(i, j);
-                //                 let [r, g, b] = PAL_COLOR[nes_color as usize];
-                //                 Rgba::from_rgb(r as f32, g as f32, b as f32)
-                //             }));
-                //         }
-                //     }
-                // });
+                ui.horizontal(|ui| {
+                    for pallette_id in 0..=7 {
+                        ui.radio_value(&mut self.debug_state.chosen_debug_palette, pallette_id, format!("#{}", pallette_id));
+                        let Some(ref nes) = self.nes else { return; };
+                        for color_index in 0..=3 {
+                            ui.label(RichText::from("■").color({
+                                let nes_color = nes.cpu.ppu.get_color_value_from_pallet_ram(pallette_id, color_index);
+                                let [r, g, b] = PAL_COLOR[nes_color as usize];
+                                Rgba::from_rgb(r as f32 / 255f32, g as f32 / 255f32, b as f32 / 255f32)
+                            }));
+                        }
+                    }
+                });
                 match self.pattern_screen.as_ref() {
                     Some(screen) => {
                         ui.add({

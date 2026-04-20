@@ -45,7 +45,6 @@ impl Cartridge {
     pub fn disassemble(&self) -> Vec<DisassembledInstruction> {
         let bytes = self.prg_memory();
         let mut result = Vec::new();
-        debug!("length: {}", result.len());
 
         let mut address = 0;
         while address < bytes.len() - 2 {

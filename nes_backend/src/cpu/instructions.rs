@@ -33,10 +33,11 @@ pub enum InstructionType {
 }
 
 impl Default for Instruction {
-    #[allow(unconditional_recursion)]
     fn default() -> Self {
         Instruction {
-            ..Default::default()
+            type_: InstructionType::INVALID,
+            mode: AddressingMode::IMP,
+            cycles: 0,
         }
     }
 }
@@ -304,9 +305,8 @@ pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
     ]
 };
 
-// some of the following match statements
-// are very repetetive. The following macros
-// help with boilerplate and reuseability.
+// * some of the following match branches are very repetetive.
+// * The following macros help with boilerplate and reuseability.
 macro_rules! branch_if {
     ($flag:expr, $self:ident, $bool:expr) => {
         {
@@ -365,7 +365,7 @@ macro_rules! load {
 }
 
 // todo: change all `& 0x80 != 0` to a function that checks if number is negative as i8
-impl CPU {
+impl<P: PixelBuffer> CPU<P> {
     #[must_use]
     pub fn operate(&mut self, instr: Instruction) -> bool {
         use InstructionType as IT;
@@ -472,18 +472,19 @@ impl CPU {
             IT::BVC => { branch_if!(StatusFlag::Overflow, self, false) },
             IT::BVS => { branch_if!(StatusFlag::Overflow, self, true) },
 
-            IT::CLC => { self.set_flag(StatusFlag::Carry, false); false },
-            IT::CLD => { self.set_flag(StatusFlag::DecimalMode, false); false },
+            IT::CLC => { self.set_flag(StatusFlag::Carry,            false); false },
+            IT::CLD => { self.set_flag(StatusFlag::DecimalMode,      false); false },
             IT::CLI => { self.set_flag(StatusFlag::DisableInterupts, false); false },
-            IT::CLV => { self.set_flag(StatusFlag::Overflow, false); false },
+            IT::CLV => { self.set_flag(StatusFlag::Overflow,         false); false },
 
-            IT::CMP => { compare!(self, self.acc, true) },
+            IT::CMP => { compare!(self, self.acc,    true) },
             IT::CPX => { compare!(self, self.reg_x, false) },
             IT::CPY => { compare!(self, self.reg_y, false) },
             
             IT::DEC => {
                 self.fetch();
-                let temp = (self.fetched - 1) as u16;
+                // todo: it used to be (fetched - 1) as u16, make sure it's the same.
+                let temp = (self.fetched.wrapping_sub(1)) as u16;
                 
                 self.write(self.addr_abs, (temp & 0x00FF) as u8);
                 
@@ -493,8 +494,8 @@ impl CPU {
                 false
             },
             
-            IT::DEX => { self.reg_x = self.reg_x.wrapping_sub(1); incr_flags!(self, self.reg_x) },
-            IT::DEY => { self.reg_y = self.reg_y.wrapping_sub(1); incr_flags!(self, self.reg_y) },
+            IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
+            IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
             
             IT::EOR => {
                 self.fetch();
@@ -507,7 +508,7 @@ impl CPU {
             
             IT::INC => {
                 self.fetch();
-                let temp = (self.fetched + 1) as u16;
+                let temp = (self.fetched.wrapping_add(1)) as u16;
                 
                 self.write(self.addr_abs, (temp & 0x00FF) as u8);
                 
@@ -517,8 +518,8 @@ impl CPU {
                 false
             },
             
-            IT::INX => { self.reg_x += 1; incr_flags!(self, self.reg_x) },
-            IT::INY => { self.reg_y += 1; incr_flags!(self, self.reg_y) },
+            IT::INX => { self.reg_x.wrapping_add_mut(1); incr_flags!(self, self.reg_x) },
+            IT::INY => { self.reg_y.wrapping_add_mut(1); incr_flags!(self, self.reg_y) },
 
             IT::NOP => { matches!(self.opcode, 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC) },
             
@@ -536,7 +537,7 @@ impl CPU {
                 false
             },
 
-            IT::LDA => { load!(self, self.acc) },
+            IT::LDA => { load!(self, self.acc  ) },
             IT::LDX => { load!(self, self.reg_x) },
             IT::LDY => { load!(self, self.reg_y) },
 
@@ -665,11 +666,11 @@ impl CPU {
                 false
             },
 
-            IT::SEC => { self.set_flag(StatusFlag::Carry, true); false },
-            IT::SED => { self.set_flag(StatusFlag::DecimalMode, true); false },
+            IT::SEC => { self.set_flag(StatusFlag::Carry,            true); false },
+            IT::SED => { self.set_flag(StatusFlag::DecimalMode,      true); false },
             IT::SEI => { self.set_flag(StatusFlag::DisableInterupts, true); false },
             
-            IT::STA => { self.write(self.addr_abs, self.acc); false },
+            IT::STA => { self.write(self.addr_abs, self.acc  ); false },
             IT::STX => { self.write(self.addr_abs, self.reg_x); false },
             IT::STY => { self.write(self.addr_abs, self.reg_y); false },
             
@@ -715,9 +716,34 @@ impl CPU {
             },
 
             IT::INVALID => {
-                println!("executed an invalid operation.");
+                error!("executed an invalid operation.");
                 false
             },
         }
     }    
 }
+
+
+
+trait WrappingMut {
+    fn wrapping_add_mut(&mut self, rhs: Self);
+    fn wrapping_sub_mut(&mut self, rhs: Self);
+}
+
+macro_rules! implement_wrapping_mut {
+    ($t:ty) => {
+        impl WrappingMut for $t {
+            fn wrapping_add_mut(&mut self, rhs: Self) {
+                *self = self.wrapping_add(rhs);
+            }
+            
+            fn wrapping_sub_mut(&mut self, rhs: Self) {
+                *self = self.wrapping_sub(rhs);
+            }
+        }       
+    };
+}
+
+implement_wrapping_mut!(u8);
+implement_wrapping_mut!(u16);
+implement_wrapping_mut!(usize);

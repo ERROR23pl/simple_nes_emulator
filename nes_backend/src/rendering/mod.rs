@@ -12,10 +12,6 @@ pub trait PixelBuffer {
     fn get(&self, index: usize) -> NesColor;
     fn set(&mut self, index: usize, color: NesColor);
 
-    fn get_pixel_pattern_table(&self, pattern_table: PatternTable, x: usize, y: usize) -> NesColor;
-    fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor);
-    
-    fn render_frame(&mut self);
     fn into_slice(&self) -> &[NesColor];
 }
 
