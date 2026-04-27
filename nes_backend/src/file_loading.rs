@@ -1,18 +1,33 @@
-use std::fs::File;
-use std::path::Path;
-use std::{fmt::{Debug, Display}, io::{self, Read}, ops::Deref};
-
-use modular_bitfield::prelude::*;
-
+// crate imports
 use crate::bit_operations::GetBits;
 
+// std imports
+use std::fs::File;
+use std::path::Path;
+use std::{fmt::{Debug, Display}, io::{self, Read}};
+
+// third-party imports
+use modular_bitfield::prelude::*;
+use thiserror::Error;
+
+// constansts
 pub const PRG_BANK_SIZE: usize = 1 << 14;
 pub const CHR_BANK_SIZE: usize = 1 << 13;
+
+// source: https://www.nesdev.org/wiki/INES
+#[derive(derive_getters::Getters)]
+pub struct INesFile {
+    header: INesFileHeader,
+    trainer: Option<Trainer>,
+    prg_rom_data: Vec<u8>, // todo: constraint this: [2<<13 == 16384; u8] * x
+    chr_rom_data: Vec<u8>, // todo: constraint this: [2<<12 == 8192; u8] * y
+    playchoice_inst_rom: Option<[u8; 8192]>, // todo: understand this
+    playchoice_prom: Option<[u8; 32]>, // todo: understand this
+}
 
 // todo: make this more readable
 #[derive(Debug, derive_getters::Getters)]
 pub struct INesFileHeader {
-    // 0..=3 => NES ascii
     prg_rom_size: u8,
     chr_rom_size: u8,    
 
@@ -41,17 +56,6 @@ pub struct INesFileHeader {
 
 type Trainer = [u8; 512];
 
-// source: https://www.nesdev.org/wiki/INES
-#[derive(derive_getters::Getters)]
-pub struct INesFile {
-    header: INesFileHeader,
-    trainer: Option<Trainer>,
-    prg_rom_data: Vec<u8>, // todo: constraint this: [2<<13 == 16384; u8] * x
-    chr_rom_data: Vec<u8>, // todo: constraint this: [2<<12 == 8192; u8] * y
-    playchoice_inst_rom: Option<[u8; 8192]>, // todo: understand this
-    playchoice_prom: Option<[u8; 32]>, // todo: understand this
-}
-
 impl Display for INesFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Debug::fmt(&self.header, f)?;
@@ -70,7 +74,7 @@ pub enum NametableArrangement {
 }
 
 impl INesFile {
-    pub fn new_from_file_path(location: impl AsRef<Path>) -> io::Result<INesFile> {
+    pub fn new_from_file_path(location: impl AsRef<Path>) -> Result<INesFile, FileDecodingError> {
         let mut file = File::open(location)?;
 
         let header = INesFileHeader::new_from_file(&mut file)?;
@@ -85,14 +89,14 @@ impl INesFile {
         }; 
 
         // PRG ROM (program ROM)
-        let mut prg_rom_data = vec![0u8; header.prg_rom_size as usize * PRG_BANK_SIZE]; // we can ommit initialization, but I'm not going to cause it's not a bottle neck. 
+        let mut prg_rom_data = vec![0u8; header.prg_rom_size as usize * PRG_BANK_SIZE]; // we *could* ommit initialization, but I'm not going to cause it's not a bottle neck. 
         file.read_exact(&mut prg_rom_data)?;
 
         // CHR ROM (character ROM)
         let mut chr_rom_data = vec![0u8; header.chr_rom_size as usize * CHR_BANK_SIZE];
         file.read_exact(&mut chr_rom_data)?;
 
-        // Possible 8192 bytes for trainer data
+        // Possible 8192 bytes for playchoice data (whatever it is)
         let playchoice = if header.playchoice_10 {
             let mut playchoice_data = [0u8; 8192];
             file.read_exact(&mut playchoice_data)?;
@@ -101,7 +105,7 @@ impl INesFile {
             None
         };
 
-        // this should be empty but I'm leaving it for debbuggin purposes
+        // this should be empty but I'm leaving it for debbugging purposes
         let mut rest = Vec::new();
         file.read_to_end(&mut rest)?;
 
@@ -134,15 +138,25 @@ impl INesFile {
 //     mapper_upper_nibble: B4,
 // }
 
+#[derive(Debug, Error)]
+pub enum FileDecodingError {
+    #[error("The first 4 bytes of the file don't match the standard 4-byte header. Expected `NES0x1A`, but found `{0:?}` ")]
+    ImproperHEaderError([u8; 4]),
+
+    #[error("IO error")]
+    IO(#[from] io::Error),
+}
 
 impl INesFileHeader {
-    pub fn new_from_file(file: &mut File) -> io::Result<INesFileHeader> {
+    pub fn new_from_file(file: &mut File) -> Result<INesFileHeader, FileDecodingError> {
         let mut header_buffer = [0u8; 16];
         file.read(&mut header_buffer)?;
 
         let nes_ascii = &header_buffer[0..4];
+        
         let prg_rom_size = &header_buffer[4];
         let chr_rom_size = &header_buffer[5];
+        
         let flags6 = &header_buffer[6];
         let flags7 = &header_buffer[7];
         let flags8 = &header_buffer[8];
@@ -152,9 +166,10 @@ impl INesFileHeader {
 
         const STANDARD_INES_HEADER: [u8; 4] = [b'N', b'E', b'S', 0x1A];
         if nes_ascii != STANDARD_INES_HEADER {
-            panic!("Header doesn't match. Potentially a wrong file format.")
+            return Err(FileDecodingError::ImproperHEaderError([nes_ascii[0], nes_ascii[1], nes_ascii[2], nes_ascii[3]]));
         }
 
+        // todo: change these into proper structs using bitfields
         // flags 6
         use NametableArrangement as NA;
         let nametable_arrangement = if flags6.nth_flag::<0>() { NA::Vertical } else { NA::Horizontal };

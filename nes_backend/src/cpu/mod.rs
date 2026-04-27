@@ -7,7 +7,7 @@ pub mod disassembler;
 use crate::{
     bit_operations::*,
     cartridge::Cartridge,
-    ppu::{PPU, ppu_controls::{PPULoopy, WritingAddressPart}},
+    ppu::{PPU, ppu_controls::WritingAddressPart},
     rendering::{PatternTable, PixelBuffer},
 };
 use addressing::*;
@@ -15,7 +15,7 @@ use instructions::*;
 
 // 3rd party imports
 use modular_bitfield::bitfield;
-use log::{debug, error, warn};
+use log::{error, warn};
 
 // constants
 pub const CPU_RAM_SIZE: usize = 2 * KB;
@@ -49,7 +49,7 @@ pub struct CPU<P: PixelBuffer> {
     fetched: u8,
     addr_abs: u16,
     // addr_rel: i8, // used to be `addr_rel: u16`
-    addr_rel: u16, // used to be `addr_rel: u16`
+    addr_rel: u16,
     opcode: u8,
     cycles: u8,
 }
@@ -104,7 +104,6 @@ macro_rules! PPU_RANGE { () => { 0x2000..0x4000 }; }
 macro_rules! PROGRAM_ROM_RANGE { () => { 0x4020..=0xFFFF }; }
 
 
-// * Core functionality
 impl<P: PixelBuffer> CPU<P> {
     fn set_flag(&mut self, flag: StatusFlag, value: bool) {
         if value {
@@ -120,10 +119,10 @@ impl<P: PixelBuffer> CPU<P> {
 
     pub fn write(&mut self, address: u16, data: u8) {
         match address {
-            RAM_RANGE!() => { self.ram[(address & 0x07FF) as usize] = data }, // & 0x7FFF implements mirroring
-            PPU_RANGE!() => { self.cpu_write_to_ppu(address & 0x0007, data) }, // 0x0007 implements mirroring
+            RAM_RANGE!() => { self.ram[(address & 0x07FF) as usize] = data },
+            PPU_RANGE!() => { self.cpu_write_to_ppu(address & 0x0007, data) },
             PROGRAM_ROM_RANGE!() => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
-            _ => { warn!("attempted to write to memory that wasn't yet implemented ({}). Not doing anything.", address) },
+            _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
         }
     }
     
@@ -135,7 +134,7 @@ impl<P: PixelBuffer> CPU<P> {
             RAM_RANGE!() => self.ram[(address & 0x07FF) as usize],
             PPU_RANGE!() => self.cpu_read_from_ppu(address & 0x0007, read_only),
             PROGRAM_ROM_RANGE!() => self.cartridge.cpu_read(address), // todo: is this correct?
-            _ => { warn!("Attempted to read from memory that wasn't yet implemented. Returning 0."); 0 },
+            _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
         }
     }
     
@@ -149,10 +148,10 @@ impl<P: PixelBuffer> CPU<P> {
             STATUS => {
                 let retrieved_data = (u8::from(ppu_controls.status) & 0xE0) | (ppu_controls.data_buffer & 0x1F);
                 
-                if read_only { return retrieved_data; }
-
-                ppu_controls.status.set_vertical_blank(false);
-                ppu_controls.writing_part = WritingAddressPart::default();
+                if !read_only {
+                    ppu_controls.status.set_vertical_blank(false);
+                    ppu_controls.writing_part = WritingAddressPart::default();
+                }
                 
                 retrieved_data
             },
@@ -177,7 +176,7 @@ impl<P: PixelBuffer> CPU<P> {
                     if ppu_controls.control.increment_mode() { 32 } else { 1 }
                 );
 
-                if u16::from(ppu_controls.vram_address) >= 0x3F00 {
+                if u16::from(ppu_controls.vram_address) >= 0x3F00 { // 0x3F00 = start of palette memory
                     new_data_buffer
                 } else {
                     delayed_data
@@ -260,21 +259,19 @@ impl<P: PixelBuffer> CPU<P> {
             let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
             
             self.cycles = instruction.cycles();
-            self.cycles += self.execute(instruction) as u8; // add one cycle if returns true
+            self.cycles += self.find_data_and_execute(instruction) as u8; // add one cycle if returns true
         }
 
         self.cycles -= 1;
     }
     
     // returns `true` if the execution needs another cycle
-    fn execute(&mut self, instruction: Instruction) -> bool {
+    fn find_data_and_execute(&mut self, instruction: Instruction) -> bool {
         let data_needs_cycle = self.find_data(*instruction.mode());
-        let operation_needs_cycle = self.operate(instruction);
+        let operation_needs_cycle = self.execute(instruction);
         
         data_needs_cycle && operation_needs_cycle
     }
-
-    
 
     pub fn reset(&mut self) {
         // Get address to set program counter to and set it
@@ -336,15 +333,7 @@ impl<P: PixelBuffer> CPU<P> {
         self.cycles = 8;
     }
 
-    pub fn fetch(&mut self) -> u8 {
-        let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
-        
-        if *instruction.mode() != AddressingMode::IMP {
-            self.fetched = self.read(self.addr_abs, false);
-        }
-        
-        self.fetched
-    }
+    
 
     pub fn ppu_clock(&mut self) {
         self.ppu.clock(&mut self.cartridge);

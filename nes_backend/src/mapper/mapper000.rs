@@ -1,13 +1,8 @@
 use super::*;
 
+#[derive(Default)]
 pub struct Mapper000 {
     double_memory: bool,
-}
-
-impl Default for Mapper000 {
-    fn default() -> Self {
-        Self { double_memory: Default::default() }
-    }
 }
 
 impl Mapper000 {
@@ -24,7 +19,7 @@ impl Mapper for Mapper000 {
         }
     }
 
-    fn map_cpu_write(&mut self, address: u16) -> u32 {
+    fn map_cpu_write(&mut self, _address: u16) -> u32 {
         panic!("Mapper 000 does not have PRG RAM")
     }
 
@@ -35,7 +30,7 @@ impl Mapper for Mapper000 {
         }
     }
 
-    fn map_ppu_write(&mut self, address: u16) -> u32 {
+    fn map_ppu_write(&mut self, _address: u16) -> u32 {
         panic!("Mapper 000 does not have CHR RAM.")        
     }
 }

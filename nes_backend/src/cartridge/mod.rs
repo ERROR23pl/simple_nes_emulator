@@ -1,3 +1,6 @@
+use thiserror::Error;
+
+// crate imports
 use crate::mapper::Mapper;
 use crate::file_loading::{self, *};
 
@@ -6,13 +9,10 @@ use crate::mapper::mapper000::Mapper000;
 
 #[derive(Default, derive_getters::Getters)]
 pub struct Cartridge {
-    // these have to be properly sized
     prg_memory: Vec<u8>,
     chr_memory: Vec<u8>,
-
     mirroring: Mirroring,
-
-    mapper: Box<dyn Mapper>, // there are more than 256 mapper afaik
+    mapper: Box<dyn Mapper>,
 }
 
 #[derive(Default)]
@@ -22,21 +22,10 @@ pub enum Mirroring {
     Vertical,
 }
 
-impl From<&NametableArrangement> for Mirroring {
-    fn from(value: &NametableArrangement) -> Self {
-        use NametableArrangement as NA;
-        match value {
-            NA::Horizontal => Mirroring::Horizontal,
-            NA::Vertical => Mirroring::Vertical,
-        }
-    }
-}
+impl TryFrom<&INesFile> for Cartridge {
+    type Error = UnimplementedMapperError;
 
-#[derive(Debug)]
-pub struct UnimplementedMapperError(u8);
-
-impl Cartridge {
-    pub fn new(file: &INesFile) -> Result<Self, UnimplementedMapperError> {
+    fn try_from(file: &INesFile) -> Result<Self, Self::Error> {
         Ok(Cartridge {
             prg_memory: file.prg_rom_data().clone(),
             chr_memory: file.chr_rom_data().clone(),
@@ -48,6 +37,10 @@ impl Cartridge {
         })
     }
 }
+
+#[derive(Debug, Error)]
+#[error("mapper #{0} has not yet been implemented")]
+pub struct UnimplementedMapperError(u8);
 
 
 impl Cartridge {
@@ -86,6 +79,16 @@ impl Cartridge {
             chr_memory: vec![0; 1 << 13],
             mapper: Box::new(Mapper000::new(false)),
             ..Default::default()
+        }
+    }
+}
+
+impl From<&NametableArrangement> for Mirroring {
+    fn from(value: &NametableArrangement) -> Self {
+        use NametableArrangement as NA;
+        match value {
+            NA::Horizontal => Mirroring::Horizontal,
+            NA::Vertical => Mirroring::Vertical,
         }
     }
 }

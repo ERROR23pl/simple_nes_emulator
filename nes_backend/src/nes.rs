@@ -22,10 +22,10 @@ impl<P: PixelBuffer> NES<P> {
         self.clock_count = 0;
     }
 
-    // * PPU clock is 3x faster than CPU clock
     pub fn clock(&mut self) {
         self.cpu.ppu_clock();
-
+        
+        // PPU clock is 3x faster than CPU clock
         if self.clock_count % 3 == 0 {
             self.cpu.clock();
         }

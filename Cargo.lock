@@ -1612,6 +1612,7 @@ dependencies = [
  "modular-bitfield",
  "strum",
  "strum_macros",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -1625,6 +1626,7 @@ dependencies = [
  "nes_backend",
  "rfd",
  "serde",
+ "thiserror 2.0.18",
  "wasm-bindgen-futures",
  "web-sys",
 ]

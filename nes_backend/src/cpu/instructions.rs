@@ -3,7 +3,7 @@ use addressing::AddressingMode;
 
 pub const STACK_BASE: u16 = 0x0100;
 
-#[derive(Clone, Copy, derive_getters::Getters)]
+#[derive(Default, Clone, Copy, derive_getters::Getters)]
 pub struct Instruction {
     type_: InstructionType,
     mode: AddressingMode,
@@ -30,16 +30,6 @@ pub enum InstructionType {
 
     #[default]    
     INVALID,
-}
-
-impl Default for Instruction {
-    fn default() -> Self {
-        Instruction {
-            type_: InstructionType::INVALID,
-            mode: AddressingMode::IMP,
-            cycles: 0,
-        }
-    }
 }
 
 pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
@@ -305,8 +295,8 @@ pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
     ]
 };
 
-// * some of the following match branches are very repetetive.
-// * The following macros help with boilerplate and reuseability.
+// some of the following match branches are very repetetive.
+// The following macros help with boilerplate and reuseability.
 macro_rules! branch_if {
     ($flag:expr, $self:ident, $bool:expr) => {
         {
@@ -329,7 +319,7 @@ macro_rules! branch_if {
 macro_rules! compare {
     ($self:ident, $register:expr, $ret:literal) => {
         {
-            $self.fetch();
+            $self.fetch_data();
             let temp = ($register as i16) - ($self.fetched as i16);
             $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
             $self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
@@ -354,7 +344,7 @@ macro_rules! incr_flags {
 macro_rules! load {
     ($self:ident, $register:expr) => {
         {
-            $self.fetch();
+            $self.fetch_data();
             $register = $self.fetched;
             $self.set_flag(StatusFlag::Zero, $register == 0x00);
             $self.set_flag(StatusFlag::Negative, $register & 0x80 != 0);
@@ -366,12 +356,22 @@ macro_rules! load {
 
 // todo: change all `& 0x80 != 0` to a function that checks if number is negative as i8
 impl<P: PixelBuffer> CPU<P> {
+    fn fetch_data(&mut self) -> u8 {
+        let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
+        
+        if *instruction.mode() != AddressingMode::IMP {
+            self.fetched = self.read(self.addr_abs, false);
+        }
+        
+        self.fetched
+    }
+
     #[must_use]
-    pub fn operate(&mut self, instr: Instruction) -> bool {
+    pub fn execute(&mut self, instr: Instruction) -> bool {
         use InstructionType as IT;
         match instr.type_ {
             IT::ADC => {
-                self.fetch();
+                self.fetch_data();
                 
                 let temp: u16 = self.acc as u16 + self.fetched as u16 + self.get_flag(StatusFlag::Carry) as u16;
                 
@@ -392,7 +392,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::SBC => {
-                self.fetch();
+                self.fetch_data();
 	
                 let value = ((self.fetched as u16)) ^ 0x00FF;
                 
@@ -407,7 +407,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::AND => {
-                self.fetch();
+                self.fetch_data();
                 self.acc = self.acc & self.fetched;
                 self.set_flag(StatusFlag::Carry, self.acc == 0);
                 self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
@@ -416,7 +416,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::ASL => {
-                self.fetch();
+                self.fetch_data();
                 
                 let temp = (self.fetched as u16) << 1;
                 self.set_flag(StatusFlag::Carry, (temp & 0xFF00) > 0);
@@ -437,7 +437,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::BEQ => { branch_if!(StatusFlag::Zero, self, true) },
             
             IT::BIT => {
-                self.fetch();
+                self.fetch_data();
                 let temp = (self.acc & self.fetched) as u16;
                 self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
                 self.set_flag(StatusFlag::Negative, self.fetched & (1 << 7) != 0);
@@ -482,7 +482,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::CPY => { compare!(self, self.reg_y, false) },
             
             IT::DEC => {
-                self.fetch();
+                self.fetch_data();
                 // todo: it used to be (fetched - 1) as u16, make sure it's the same.
                 let temp = (self.fetched.wrapping_sub(1)) as u16;
                 
@@ -498,7 +498,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
             
             IT::EOR => {
-                self.fetch();
+                self.fetch_data();
                 self.acc = self.acc ^ self.fetched;	
                 self.set_flag(StatusFlag::Zero, self.acc == 0x00);
                 self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
@@ -507,7 +507,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
             
             IT::INC => {
-                self.fetch();
+                self.fetch_data();
                 let temp = (self.fetched.wrapping_add(1)) as u16;
                 
                 self.write(self.addr_abs, (temp & 0x00FF) as u8);
@@ -542,7 +542,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::LDY => { load!(self, self.reg_y) },
 
             IT::LSR => {
-                self.fetch();
+                self.fetch_data();
                 
                 self.set_flag(StatusFlag::Carry, self.fetched & 0x0001 != 0);
                 let temp = (self.fetched >> 1) as u16;	
@@ -559,7 +559,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::ORA => {
-                self.fetch();
+                self.fetch_data();
 
                 self.acc = self.acc | self.fetched;
                 self.set_flag(StatusFlag::Zero, self.acc == 0x00);
@@ -604,7 +604,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::ROL => {
-                self.fetch();
+                self.fetch_data();
                 
                 let temp = ((self.fetched << 1) as u16) | (self.get_flag(StatusFlag::Carry) as u16);
                 
@@ -622,7 +622,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             IT::ROR => {
-                self.fetch();
+                self.fetch_data();
                 let temp = ((self.fetched << 1) as u16) | (self.get_flag(StatusFlag::Carry) as u16);
                 
                 self.set_flag(StatusFlag::Carry, temp & 0xFF00 != 0);
@@ -722,8 +722,6 @@ impl<P: PixelBuffer> CPU<P> {
         }
     }    
 }
-
-
 
 trait WrappingMut {
     fn wrapping_add_mut(&mut self, rhs: Self);

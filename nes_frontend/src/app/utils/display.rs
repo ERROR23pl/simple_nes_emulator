@@ -1,6 +1,11 @@
+// crate imports
+use nes_backend::rendering::{self, *};
+
+// std imports
 use std::sync::Arc;
 
-use egui::{ Color32, ColorImage, ImageData, TextureHandle, TextureOptions };
+// third-party imports
+use egui::{Color32, ColorImage, ImageData, TextureHandle, TextureOptions };
 
 pub struct Screen {
     pub handle: TextureHandle,
@@ -25,17 +30,9 @@ impl Screen {
             .flatten()
             .collect();
 
-        
-        // self.buffer = vec![color; width * height].into_iter().flatten().collect();
         let image = ColorImage::from_rgb([width, height], &self.buffer);
         
-        // for row in 0..height {
-        //     image[((*frame_count + row) % width, row)] = Color32::BLACK;
-        // }
-        
         self.handle.set(image, TextureOptions::default());
-        
-        // *frame_count = (*frame_count + 1) % width;
     }
 }
 
@@ -57,39 +54,11 @@ impl Screen {
     }
 }
 
-use log::debug;
-use nes_backend::rendering::{self, *};
-
-#[derive(Default)]
-pub struct DummyCanvas;
-
-
-impl PixelBuffer for DummyCanvas {
-    fn get_pixel(&self, x: usize, y: usize) -> NesColor {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn set_pixel(&mut self, x: usize, y: usize, color: NesColor) {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn get(&self, index: usize) -> NesColor {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn set(&mut self, index: usize, color: NesColor) {
-        unimplemented!("You're not supposed to write on a DummyCanvas");
-    }
-
-    fn into_slice(&self) -> &[NesColor] {
-        todo!()
-    }
-}
 
 pub struct BasicPixelBuffer {
-    buffer: Vec<NesColor>,
     width: usize,
     height: usize,
+    buffer: Vec<NesColor>,
     ready_to_render: bool,
 }
 
@@ -114,27 +83,19 @@ impl BasicPixelBuffer {
 
 impl PixelBuffer for BasicPixelBuffer {
     fn get_pixel(&self, x: usize, y: usize) -> NesColor {
-        debug_assert!(self.coor_to_index(x, y) < self.buffer.len());
-        debug_assert!(x < self.width);
-        debug_assert!(y < self.height);
         self.buffer[self.coor_to_index(x, y)]
     }
     
     fn set_pixel(&mut self, x: usize, y: usize, color: NesColor) {
-        debug_assert!(self.coor_to_index(x, y) < self.buffer.len());
-        debug_assert!(x < self.width);
-        debug_assert!(y < self.height);
         let coor = self.coor_to_index(x, y);
         self.buffer[coor] = color;
     }
 
     fn get(&self, index: usize) -> NesColor {
-        debug_assert!(index < self.buffer.len());
         self.buffer[index]       
     }
 
     fn set(&mut self, index: usize, color: NesColor) {
-        debug_assert!(index < self.buffer.len());
         self.buffer[index] = color;
     }
 

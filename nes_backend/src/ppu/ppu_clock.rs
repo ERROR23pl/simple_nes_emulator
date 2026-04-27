@@ -1,4 +1,9 @@
-use crate::{bit_operations::GetBits, cartridge::Cartridge, ppu::{PPU, ppu_controls::PPULoopy}, rendering::PixelBuffer};
+use crate::{
+    bit_operations::GetBits,
+    cartridge::Cartridge,
+    ppu::{PPU, ppu_controls::PPULoopy},
+    rendering::PixelBuffer
+};
 
 impl<P: PixelBuffer> PPU<P> {
     pub fn clock(&mut self, cartridge: &mut Cartridge) {
