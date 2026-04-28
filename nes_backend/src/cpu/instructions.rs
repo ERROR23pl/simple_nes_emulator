@@ -406,6 +406,7 @@ impl<P: PixelBuffer> CPU<P> {
                 true
             },
 
+            // accumulator and
             IT::AND => {
                 self.fetch_data();
                 self.acc = self.acc & self.fetched;
@@ -415,6 +416,7 @@ impl<P: PixelBuffer> CPU<P> {
                 true
             },
 
+            // accumulator shift left
             IT::ASL => {
                 self.fetch_data();
                 
@@ -435,7 +437,8 @@ impl<P: PixelBuffer> CPU<P> {
             IT::BCC => { branch_if!(StatusFlag::Carry, self, false) },
             IT::BCS => { branch_if!(StatusFlag::Carry, self, true) },
             IT::BEQ => { branch_if!(StatusFlag::Zero, self, true) },
-            
+
+            // todo: what is this?
             IT::BIT => {
                 self.fetch_data();
                 let temp = (self.acc & self.fetched) as u16;
@@ -497,6 +500,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
             IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
             
+            // bit-wise XOR
             IT::EOR => {
                 self.fetch_data();
                 self.acc = self.acc ^ self.fetched;	
@@ -541,6 +545,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::LDX => { load!(self, self.reg_x) },
             IT::LDY => { load!(self, self.reg_y) },
 
+            // todo: what the hell is this instruction?
             IT::LSR => {
                 self.fetch_data();
                 
@@ -745,3 +750,16 @@ macro_rules! implement_wrapping_mut {
 implement_wrapping_mut!(u8);
 implement_wrapping_mut!(u16);
 implement_wrapping_mut!(usize);
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        // let result = add(2, 2);
+        // assert_eq!(result, 4);
+    }
+}

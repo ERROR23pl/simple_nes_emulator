@@ -139,11 +139,11 @@ impl<P: PixelBuffer> CPU<P> {
 
             // todo: change `t` name variable
             AM::IZX => {
-                let t = self.read(self.program_counter, false);
+                let t = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte  = self.read((t + self.reg_x + 0) as u16 & 0x00FF, false);
-                let high_byte = self.read((t + self.reg_x + 1) as u16 & 0x00FF, false);
+                let low_byte  = self.read((t + self.reg_x as u16 + 0) & 0x00FF, false);
+                let high_byte = self.read((t + self.reg_x as u16 + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte);
                 
@@ -151,11 +151,11 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             AM::IZY => {
-                let t = self.read(self.program_counter, false);
+                let t = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte = self.read(t as u16 & 0x00FF, false);
-                let high_byte = self.read((t + 1) as u16 & 0x00FF, false);
+                let low_byte = self.read((t + 0) & 0x00FF, false);
+                let high_byte = self.read((t + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte) + self.reg_y as u16;
 

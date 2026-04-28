@@ -88,6 +88,7 @@ impl crate::App {
             .resizable(true)
             .show(ctx, |ui| {
                 ui.label(format!("nes cycle count: {}", nes.clock_count()));
+                ui.label(format!("frame count: {}", nes.frame_count()));
 
                 let program_counter = nes.cpu().program_counter() as usize;
 

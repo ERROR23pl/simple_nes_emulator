@@ -9,13 +9,7 @@ use crate::rendering::{NesColor, PAL_COLOR, PatternTable, PixelBuffer};
 use itertools::iproduct;
 
 pub struct PPU<P: PixelBuffer> {
-    // pattern memory is located on the cardridge
-    // conceptually it can be accessed with addresses $0000..=$1FFF
-    // meaning that logically there's 8KB of memory there.
-    // mappers can of course change this behaviour, but as far as
-    // PPU is concerned, there are 8KB of pattern memory
-    // These are split in two 4KB chunks sometimes called "left" and "right"
-    // Pattern memory is usually ROM, though it can be RAM
+    
     name_table: [[u8; 1024]; 2], // NES stores two 1KB name tables (vram)
     palette: [u8; 32],
     pub ppu_controls: PPUControlRegisters,
@@ -71,12 +65,18 @@ impl<P: PixelBuffer> PPU<P> {
     
     pub fn read(&self, address: u16, cartridge: &Cartridge) -> u8 {
         match address {
-            // pattern memory
+            // pattern memory is located on the cardridge
+            // conceptually it can be accessed with addresses $0000..=$1FFF
+            // meaning that logically there's 8KB of memory there.
+            // mappers can of course change this behaviour, but as far as
+            // PPU is concerned, there are 8KB of pattern memory
+            // These are split in two 4KB chunks sometimes called "left" and "right"
+            // Pattern memory is usually ROM, though it can be RAM
             0x0000..0x2000 => { cartridge.ppu_read(address) },
 
-            // name table
+            // todo: nametables can be also mapped by a cartridge
             0x2000..0x3000 => match cartridge.mirroring() {
-                // the mirroring is done by a brute force method even thoug there are more clever solutions.
+                // the mirroring is done by a brute force method even though there are more clever solutions.
                 Mirroring::Horizontal => match address & 0x0FFF {
                     0x0000..0x0400 | 0x0800..0x0C00 => self.name_table[0][(address & 0x03FF) as usize],
                     0x0400..0x0800 | 0x0C00..0x1000 => self.name_table[1][(address & 0x03FF) as usize],
@@ -96,7 +96,7 @@ impl<P: PixelBuffer> PPU<P> {
                 // todo: I don't know if this way of mirroring works lol, I should check; 
                 // let masked_address = address & 0x001F;
                 // let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
-                let mirrored_address = if address & 0x03 == 0 { 0 } else { address & 0x1F };
+                // let mirrored_address = if (address & 0x03) == 0 { 0 } else { address & 0x1F };
 
                 // let mirrored_address = match masked_address {
                 //     0x0010 => 0x0004,
@@ -105,7 +105,13 @@ impl<P: PixelBuffer> PPU<P> {
                 //     0x001C => 0x0012,
                 //     _ => masked_address,
                 // };
-                self.palette[mirrored_address as usize]
+                // self.palette[mirrored_address as usize]
+                let mut addr = address & 0x001F;
+                if addr == 0x0010 { addr = 0x0000 };
+                if addr == 0x0014 { addr = 0x0004 };
+                if addr == 0x0018 { addr = 0x0008 };
+                if addr == 0x001C { addr = 0x000C };
+                self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
             },
 
             0x4000.. => unreachable!("PPU bus only goes from has address range 0x0000..0x4000"),
@@ -139,7 +145,7 @@ impl<P: PixelBuffer> PPU<P> {
                 // todo: I don't know if this way of mirroring works lol, I should check; 
                 // let masked_address = address & 0x001F;
                 // let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
-                let mirrored_address = if address & 0x03 == 0 { 0 } else { address & 0x1F };
+                // let mirrored_address = if address & 0x03 == 0 { 0 } else { address & 0x1F };
                 // let mirrored_address = match masked_address {
                 //     0x0010 => 0x0004,
                 //     0x0014 => 0x0004,
@@ -147,7 +153,14 @@ impl<P: PixelBuffer> PPU<P> {
                 //     0x001C => 0x0012,
                 //     _ => masked_address,
                 // };
-                self.palette[mirrored_address as usize] = data; 
+                // self.palette[mirrored_address as usize] = data; 
+                let mut addr = address & 0x001F;
+                if addr == 0x0010 { addr = 0x0000 };
+                if addr == 0x0014 { addr = 0x0004 };
+                if addr == 0x0018 { addr = 0x0008 };
+                if addr == 0x001C { addr = 0x000C };
+                // data = tblPalette[addr] & (mask.grayscale ? 0x30 : 0x3F);
+                self.palette[addr as usize] = data;
             },
 
             0x4000.. => unreachable!("PPU bus only goes from has address range 0x0000..0x4000"),
@@ -160,7 +173,7 @@ impl<P: PixelBuffer> PPU<P> {
         // let initial_address = initial_address & 0x001F;
         // let mirrored_address = if pixel_id == 0 { 0 } else { initial_address }; 
 
-        let mirrored_address = if initial_address & 0x03 == 0 { 0 } else { initial_address & 0x1F };
+        // let mirrored_address = if initial_address & 0x03 == 0 { 0 } else { initial_address & 0x1F };
         // let mirrored_address = match initial_address {
         //     0x0010 => 0x0004,
         //     0x0014 => 0x0004,
@@ -169,11 +182,17 @@ impl<P: PixelBuffer> PPU<P> {
         //     _ => initial_address,
         // };
         // let mirrored_address = if pixel_id == 0 { 0 } else { initial_address }; 
-        self.palette[mirrored_address as usize]
+        // self.palette[mirrored_address as usize]
+        let mut addr = initial_address & 0x001F;
+        if addr == 0x0010 { addr = 0x0000 };
+        if addr == 0x0014 { addr = 0x0004 };
+        if addr == 0x0018 { addr = 0x0008 };
+        if addr == 0x001C { addr = 0x000C };
+        self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
     }
 }
 
-// debug functions
+// * debug functions
 impl<P: PixelBuffer> PPU<P> {
     fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor) {
         let pattern_shift = (pattern_table as usize) * (256 / 2);

@@ -56,9 +56,8 @@ impl App {
             },
             None => {
                 // clock nes until the ppu finishes drawing the frame
-                while !nes.cpu().ppu.frame_complete { nes.clock() };
+                while !nes.check_frame_complete_and_toggle() { nes.clock() };
                 screen.update_with_pixel_buffer(&nes.cpu().ppu().screen);
-                *(&mut nes.cpu.ppu.frame_complete) = false;
 
                 // if we want to render pattern memory
                 if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {

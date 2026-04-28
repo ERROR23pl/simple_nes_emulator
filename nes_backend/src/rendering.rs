@@ -15,7 +15,7 @@ pub enum PatternTable {
     Right = 1,
 }
 
-// color scheme by Bismuth
+// color scheme by Bisqit
 // todo: link the source
 pub const PAL_COLOR: [[u8; 3]; 0x40] = [
     [0x54, 0x54, 0x54],

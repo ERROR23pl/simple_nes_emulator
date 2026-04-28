@@ -1,7 +1,7 @@
 use crate::{
     bit_operations::GetBits,
     cartridge::Cartridge,
-    ppu::{PPU, ppu_controls::PPULoopy},
+    ppu::PPU,
     rendering::PixelBuffer
 };
 
@@ -15,10 +15,6 @@ impl<P: PixelBuffer> PPU<P> {
         // information and sprite information, compositing them into a pixel
         // to be output.
 
-        // The lambda functions (functions inside functions) contain the various
-        // actions to be performed depending upon the output of the state machine
-        // for a given scanline/cycle combination
-        
         if matches!(self.scanline, -1..240) { // visible scanline
             if self.scanline == 0 && self.cycle == 0 {
                 // "Odd Frame" cycle skip
@@ -50,7 +46,7 @@ impl<P: PixelBuffer> PPU<P> {
                         // "(vram_addr.reg & 0x0FFF)" : Mask to 12 bits that are relevant
                         // "| 0x2000"                 : Offset into nametable space on PPU address bus
                         self.bg_next_tile_id = self.read(
-                            0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF),
+                            0x2000 + (u16::from(self.ppu_controls.vram_address) & 0x0FFF),
                             cartridge
                         );
 
@@ -117,7 +113,6 @@ impl<P: PixelBuffer> PPU<P> {
                         const ATTRIBUTE_MEMORY_OFFSET: u16 = 32 * 30;
                         const NAMETABLE_MEMORY_OFFSET: u16 = 0x2000;
                         let (_, nametable_y, nametable_x, coarse_y, coarse_x) = &self.ppu_controls.vram_address.dissolve_u16();
-                        assert!(*nametable_y == 0 || *nametable_y == 1);
                         
                         self.bg_next_tile_attrib = self.read(
                             NAMETABLE_MEMORY_OFFSET + ATTRIBUTE_MEMORY_OFFSET + (
@@ -162,7 +157,10 @@ impl<P: PixelBuffer> PPU<P> {
                             (false, true) => 4,
                             // BR, bottom-right
                             (false, false) => 6,
-                        } & 0x03;
+                        };
+
+                        // only interested in last 2 bits                        
+                        self.bg_next_tile_attrib &= 0x03;
                         
                         // Ultimately we want the bottom two bits of our attribute word to be the
                         // palette selected. So shift as required...
@@ -271,12 +269,12 @@ impl<P: PixelBuffer> PPU<P> {
 
         let mut bg_pixel: u8 = 0x00;   // The 2-bit pixel to be rendered
         let mut bg_palette: u8 = 0x00; // The 3-bit index of the palette the pixel indexes
-
+        
         // We only render backgrounds if the PPU is enabled to do so. Note if 
         // background rendering is disabled, the pixel and palette combine
         // to form 0x00. This will fall through the colour tables to yield
         // the current background colour in effect
-        if self.ppu_controls.mask.render_background() {
+        if self.ppu_controls.mask.render_background() && matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
             // Handle Pixel Selection by selecting the relevant bit
             // depending upon fine x scolling. This has the effect of
             // offsetting ALL background rendering by a set number
@@ -295,20 +293,13 @@ impl<P: PixelBuffer> PPU<P> {
             let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
             let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
             bg_palette = (bg_pal1 << 1) | bg_pal0;
-        }
 
+            // Now we have a final pixel colour, and a palette for this cycle
+            // of the current scanline. Let's at long last, draw that ^&%*er :P
 
-        // Now we have a final pixel colour, and a palette for this cycle
-        // of the current scanline. Let's at long last, draw that ^&%*er :P
-
-        // sprScreen->SetPixel(cycle - 1, scanline, GetColourFromPaletteRam(bg_palette, bg_pixel));
-        if matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
             let color = self.get_color_value_from_pallet_ram(bg_palette, bg_pixel);
             self.screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
-        }
-
-        // Fake some noise for now
-        //sprScreen.SetPixel(cycle - 1, scanline, palScreen[(rand() % 2) ? 0x3F : 0x30]);
+        }    
 
         // Advance renderer - it never stops, it's relentless
         self.cycle += 1;

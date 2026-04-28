@@ -7,6 +7,7 @@ use crate::{
 pub struct NES<P: PixelBuffer> {
     pub cpu: CPU<P>,
     clock_count: usize,
+    frame_count: usize,
 }
 
 impl<P: PixelBuffer> NES<P> {
@@ -14,6 +15,7 @@ impl<P: PixelBuffer> NES<P> {
         Self {
             cpu: CPU::new(cartridge, PPU::new(pixel_buffer, debug_pattern_screen)),
             clock_count: 0,
+            frame_count: 0,
         }
     }
 
@@ -46,5 +48,15 @@ impl<P: PixelBuffer> NES<P> {
 
     pub fn render_debug_pattern_table(&mut self, pattern_table_side: PatternTable, pallete_id: u8) {
         self.cpu.render_debug_pattern_table(pattern_table_side, pallete_id);
+    }
+
+    pub fn check_frame_complete_and_toggle(&mut self) -> bool {
+        if self.cpu.ppu.frame_complete {
+            self.cpu.ppu.frame_complete = false;
+            self.frame_count += 1;
+            true
+        } else {
+            false
+        }
     }
 }

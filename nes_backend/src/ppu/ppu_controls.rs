@@ -91,7 +91,13 @@ impl PPULoopy {
     }
 
     pub fn dissolve_u16(&self) -> (u16, u16, u16, u16, u16) {
-        (self.fine_y() as u16, self.nametable_y() as u16, self.nametable_x() as u16, self.coarse_y() as u16, self.coarse_x() as u16)
+        (
+            self.fine_y() as u16,
+            self.nametable_y() as u16,
+            self.nametable_x() as u16,
+            self.coarse_y() as u16,
+            self.coarse_x() as u16
+        )
     }
 }
 
