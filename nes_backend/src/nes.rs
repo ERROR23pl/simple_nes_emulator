@@ -1,5 +1,5 @@
 use crate::{
-    cartridge::Cartridge, cpu::{CPU, CPU_RAM_SIZE}, ppu::PPU, rendering::{PatternTable, PixelBuffer}
+    cartridge::Cartridge, cpu::{CPU, CPU_RAM_SIZE}, ppu::PPU, rendering::{DummyBuffer, PatternTable, PixelBuffer}
 };
 
 
@@ -38,6 +38,12 @@ impl<P: PixelBuffer> NES<P> {
         }
 
         self.clock_count += 1;
+    }
+}
+
+impl NES<DummyBuffer> {
+    pub fn new_no_display(cartridge: Cartridge) -> Self {
+        Self::new(DummyBuffer::default(), DummyBuffer::default(), cartridge)
     }
 }
 

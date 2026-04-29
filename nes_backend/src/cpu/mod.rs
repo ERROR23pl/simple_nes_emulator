@@ -405,4 +405,11 @@ impl<P: PixelBuffer> CPU<P> {
     pub fn render_debug_pattern_table(&mut self, pattern_table_side: PatternTable, pallete_id: u8) {
         self.ppu.render_debug_pattern_table(pattern_table_side, pallete_id, &self.cartridge);
     }
+
+    pub fn clock_until_next_instruction(&mut self) {
+        self.clock();
+        while self.cycles != 0 {
+            self.clock();
+        }
+    }
 }

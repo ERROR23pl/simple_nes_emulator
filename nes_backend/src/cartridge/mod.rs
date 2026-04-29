@@ -7,9 +7,9 @@ use crate::file_loading::{self, *};
 use crate::mapper::mapper000::Mapper000;
 
 
-#[derive(Default, derive_getters::Getters)]
+#[derive(derive_getters::Getters)]
 pub struct Cartridge {
-    prg_memory: Vec<u8>,
+    pub prg_memory: Vec<u8>,
     chr_memory: Vec<u8>,
     mirroring: Mirroring,
     mapper: Box<dyn Mapper>,
@@ -20,6 +20,17 @@ pub enum Mirroring {
     #[default]
     Horizontal,
     Vertical,
+}
+
+impl Default for Cartridge {
+    fn default() -> Self {
+        Self {
+            prg_memory: vec![0; PRG_BANK_SIZE],
+            chr_memory: vec![0; CHR_BANK_SIZE],
+            mirroring: Mirroring::Horizontal,
+            mapper: Default::default(),
+        }
+    }
 }
 
 impl TryFrom<&INesFile> for Cartridge {

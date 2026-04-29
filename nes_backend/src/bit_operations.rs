@@ -1,32 +1,45 @@
 pub const KB: usize = 1024;
 
-pub trait GetBits {
-    fn nth_bit<const INDEX: u8>(&self) -> u8;
-    fn nth_flag<const INDEX: u8>(&self) -> bool {
-        match self.nth_bit::<INDEX>() {
+pub trait BitManipulation {
+    fn nth_bit(&self, bit_index: u8) -> u8;
+    fn nth_flag(&self, bit_index: u8) -> bool {
+        match self.nth_bit(bit_index) {
             0 => false,
             1 => true,
             2.. => unreachable!("GetBits::nth_bit should return only 1 or 0"),
         }
     }
-    // todo: bits
+
+    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self;
 }
 
-impl GetBits for u8 {
-    #[inline]
-    fn nth_bit<const INDEX: u8>(&self) -> u8 {
-        (self & (1 << INDEX)) >> INDEX
+impl BitManipulation for u8 {
+    fn nth_bit(&self, bit_index: u8) -> u8 {
+        // self & (1 << bit_index) masks off the proper bit
+        // >> bit_index shifts the index to the first digit
+        // so the result is 0 or 1
+        (self & (1 << bit_index)) >> bit_index
+    }
+    
+    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self {
+        let length = higher_bound - lower_bound + 1;
+
+        (self >> lower_bound) & (0xFF << length)
     }
 }
 
-pub trait GetBitsGeneric {
-    fn nth_bit_gen<const N: u8>(&self) -> u8;
-}
+impl BitManipulation for u16 {
+    fn nth_bit(&self, bit_index: u8) -> u8 {
+        // self & (1 << bit_index) masks off the proper bit
+        // >> bit_index shifts the index to the first digit
+        // so the result is 0 or 1
+        ((self & (1 << bit_index)) >> bit_index) as u8
+    }
+    
+    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self {
+        let length = higher_bound - lower_bound + 1;
 
-impl GetBitsGeneric for u8 {
-    #[inline]
-    fn nth_bit_gen<const N: u8>(&self) -> u8 {
-        (self & (1 << N)) >> N
+        (self >> lower_bound) & (0xFF << length)
     }
 }
 
@@ -37,13 +50,16 @@ pub fn glue_u8s(high_byte: u8, low_byte: u8) -> u16 {
 
 #[inline]
 pub fn split_u16(whole: u16) -> (u8, u8) {
-    let low_byte = (whole & 0x00FF) as u8;
-    let high_byte = get_high_byte(whole);
-    
-    (high_byte, low_byte) 
+    (get_high_byte(whole), get_low_byte(whole)) 
 }
+
 
 #[inline]
 pub fn get_high_byte(number: u16) -> u8 {
     ((number & 0xFF00) >> 8) as u8
+}
+
+#[inline]
+pub fn get_low_byte(number: u16) -> u8 {
+    (number & 0x00FF) as u8
 }

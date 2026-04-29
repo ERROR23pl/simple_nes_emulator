@@ -298,7 +298,7 @@ pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
 // some of the following match branches are very repetetive.
 // The following macros help with boilerplate and reuseability.
 macro_rules! branch_if {
-    ($flag:expr, $self:ident, $bool:expr) => {
+    ($self:ident, $flag:expr, $bool:expr) => {
         {
             if $self.get_flag($flag) == $bool {
                 $self.cycles += 1;
@@ -317,15 +317,15 @@ macro_rules! branch_if {
 }   
 
 macro_rules! compare {
-    ($self:ident, $register:expr, $ret:literal) => {
+    ($self:ident, $register:expr) => {
         {
             $self.fetch_data();
-            let temp = ($register as i16) - ($self.fetched as i16);
-            $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
-            $self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
-            $self.set_flag(StatusFlag::Negative, temp & 0x0080 != 1);
+            // let temp = ($register as i16) - ($self.fetched as i16);
+            let temp = $register.wrapping_sub($self.fetched);
 
-            $ret
+            $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
+            $self.set_flag(StatusFlag::Zero, $register == $self.fetched);
+            $self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0); // todo: is this correct?
         }
     };
 }
@@ -334,7 +334,7 @@ macro_rules! incr_flags {
     ($self:ident, $register:expr) => {
         {
             $self.set_flag(StatusFlag::Zero, $register == 0x00);
-            $self.set_flag(StatusFlag::Negative, $register & 0x80 != 0);
+            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
             
             false
         }
@@ -347,9 +347,20 @@ macro_rules! load {
             $self.fetch_data();
             $register = $self.fetched;
             $self.set_flag(StatusFlag::Zero, $register == 0x00);
-            $self.set_flag(StatusFlag::Negative, $register & 0x80 != 0);
+            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
             
             true
+        }
+    };
+}
+
+macro_rules! transfer {
+    ($self:ident, $from:ident, $to:ident) => {
+        {
+            $self.$to = $self.$from;
+            $self.set_flag(StatusFlag::Zero, $self.$to == 0x00);
+            $self.set_flag(StatusFlag::Negative, $self.$to.nth_bit(7) != 0);
+            false
         }
     };
 }
@@ -370,17 +381,37 @@ impl<P: PixelBuffer> CPU<P> {
     pub fn execute(&mut self, instr: Instruction) -> bool {
         use InstructionType as IT;
         match instr.type_ {
+            // ---------- ACCESS ----------
+            IT::LDA => { load!(self, self.acc  ) },
+            IT::LDX => { load!(self, self.reg_x) },
+            IT::LDY => { load!(self, self.reg_y) },
+            
+            IT::STA => { self.write(self.addr_abs, self.acc  ); false },
+            IT::STX => { self.write(self.addr_abs, self.reg_x); false },
+            IT::STY => { self.write(self.addr_abs, self.reg_y); false },
+            
+            // ---------- TRANSFER ----------
+            IT::TAX => { transfer!(self, acc,   reg_x) },
+            IT::TXA => { transfer!(self, reg_x, acc) },
+            IT::TAY => { transfer!(self, acc,   reg_y) },
+            IT::TYA => { transfer!(self, reg_y, acc) }, 
+
+            // ---------- ARITHMETIC ----------
+
+            // add with carry
             IT::ADC => {
                 self.fetch_data();
                 
-                let temp: u16 = self.acc as u16 + self.fetched as u16 + self.get_flag(StatusFlag::Carry) as u16;
+                let temp: u16 =
+                    self.acc as u16 +
+                    self.fetched as u16 +
+                    self.get_flag(StatusFlag::Carry) as u16;
                 
                 self.set_flag(StatusFlag::Carry, temp > 255);
-                
                 self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0);
-                
                 self.set_flag(
                     StatusFlag::Overflow,
+                    // todo: explain this shit
                     (!((self.acc as u16) ^ (self.fetched) as u16) & ((self.acc as u16) ^ temp)) & 0x0080 != 0
                 );
                 
@@ -394,19 +425,133 @@ impl<P: PixelBuffer> CPU<P> {
             IT::SBC => {
                 self.fetch_data();
 	
-                let value = ((self.fetched as u16)) ^ 0x00FF;
+                let value = (self.fetched as u16) ^ 0x00FF;
+                let temp =
+                    self.acc as u16 +
+                    value +
+                    self.get_flag(StatusFlag::Carry) as u16;
                 
-                let temp = (self.acc as u16) + value + (self.get_flag(StatusFlag::Carry) as u16);
                 self.set_flag(StatusFlag::Carry, temp & 0xFF00 != 0);
                 self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0);
                 self.set_flag(StatusFlag::Overflow, (temp ^ (self.acc as u16)) & (temp ^ value) & 0x0080 != 0);
                 self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
+                
                 self.acc = (temp & 0x00FF) as u8;
 
                 true
             },
+            
+            IT::INC => {
+                self.fetch_data();
+                let temp = self.fetched.wrapping_add(1);
+                
+                self.write(self.addr_abs, temp);
 
-            // accumulator and
+                self.set_flag(StatusFlag::Zero, temp == 0x0000);
+                self.set_flag(StatusFlag::Negative, temp & 0x80 != 0);
+                
+                false
+            },
+            
+            IT::INX => { self.reg_x.wrapping_add_mut(1); incr_flags!(self, self.reg_x) },
+            IT::INY => { self.reg_y.wrapping_add_mut(1); incr_flags!(self, self.reg_y) },
+            
+            IT::DEC => {
+                self.fetch_data();
+                let temp = self.fetched.wrapping_sub(1);
+                
+                self.write(self.addr_abs, temp);
+                
+                self.set_flag(StatusFlag::Zero, temp == 0x0000);
+                self.set_flag(StatusFlag::Negative, temp & 0x80 != 0);
+                
+                false
+            },
+            
+            IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
+            IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
+            
+            // ---------- SHIFT ----------
+            IT::ASL => {
+                self.fetch_data();
+                
+                let new_value = self.fetched << 1;
+
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Zero, new_value == 0x00);
+                self.set_flag(StatusFlag::Negative, new_value & 0x80 != 0);
+                
+                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
+                    self.acc = new_value;
+                } else {
+                    self.write(self.addr_abs, new_value);
+                }
+                
+                false
+            },
+            
+            // Logical Shift Right
+            IT::LSR => {
+                self.fetch_data();
+                
+                let new_value = self.fetched >> 1;	
+
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(0) != 0);
+                self.set_flag(StatusFlag::Zero, new_value == 0x0000);
+                // self.set_flag(StatusFlag::Negative, new_value & 0x80 != 0);
+                self.set_flag(StatusFlag::Negative, false); // ? value cannot be negative here
+                
+                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
+                    self.acc = new_value;
+                } else {
+                    self.write(self.addr_abs, new_value);
+                }
+                
+                false
+            },
+            
+            // Rotate Left
+            IT::ROL => {
+                self.fetch_data();
+                let carry_flag = self.get_flag(StatusFlag::Carry) as u8;
+                
+                // rotate left works like normal rotate, but it treats Carry as a bit #8
+                // hence Carry goes into bit 0, accomplished by a simple OR operation
+                // which has to suffice, since after shifting bit 0 has to be equal to 0
+                let new_value = (self.fetched << 1) | carry_flag;
+                
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Zero, new_value == 0x00);
+                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
+                
+                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
+                    self.acc = new_value;
+                } else {
+                    self.write(self.addr_abs, new_value);
+                }
+
+                false
+            },
+
+            IT::ROR => {
+                self.fetch_data();
+                let carry_flag = self.get_flag(StatusFlag::Carry) as u8;
+                let new_value = (self.fetched >> 1) | (carry_flag << 7);
+                
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(0) != 0);
+                self.set_flag(StatusFlag::Zero, new_value == 0x00);
+                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
+                
+                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
+                    self.acc = new_value;
+                } else {
+                    self.write(self.addr_abs, new_value);
+                }
+                
+                false
+            },
+
+            // ---------- BITWISE ----------
             IT::AND => {
                 self.fetch_data();
                 self.acc = self.acc & self.fetched;
@@ -415,43 +560,81 @@ impl<P: PixelBuffer> CPU<P> {
                 
                 true
             },
-
-            // accumulator shift left
-            IT::ASL => {
+            
+            IT::ORA => {
                 self.fetch_data();
-                
-                let temp = (self.fetched as u16) << 1;
-                self.set_flag(StatusFlag::Carry, (temp & 0xFF00) > 0);
-                self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x00);
-                self.set_flag(StatusFlag::Negative, temp & 0x80 != 0);
-                
-                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
-                    self.acc = (temp & 0x00FF) as u8;
-                } else {
-                    self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                }
-                
-                false
-            },
 
-            IT::BCC => { branch_if!(StatusFlag::Carry, self, false) },
-            IT::BCS => { branch_if!(StatusFlag::Carry, self, true) },
-            IT::BEQ => { branch_if!(StatusFlag::Zero, self, true) },
+                self.acc = self.acc | self.fetched;
+                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
+                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
 
-            // todo: what is this?
-            IT::BIT => {
-                self.fetch_data();
-                let temp = (self.acc & self.fetched) as u16;
-                self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, self.fetched & (1 << 7) != 0);
-                self.set_flag(StatusFlag::Overflow, self.fetched & (1 << 6) != 0);
-                
-                false
+                true
             },
             
-            IT::BMI => { branch_if!(StatusFlag::Negative, self, true) },
-            IT::BNE => { branch_if!(StatusFlag::Zero, self, false) },
-            IT::BPL => { branch_if!(StatusFlag::Negative, self, false) },
+            // Exclusive OR, otherwise known as XOR
+            IT::EOR => {
+                self.fetch_data();
+                self.acc = self.acc ^ self.fetched;	
+                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
+                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
+                
+                true
+            },
+            
+            // Bit Test
+            IT::BIT => {
+                self.fetch_data();
+                let temp = self.acc & self.fetched;
+
+                self.set_flag(StatusFlag::Zero, temp == 0x00);
+                self.set_flag(StatusFlag::Negative, self.fetched.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Overflow, self.fetched.nth_bit(6) != 0);
+                
+                false
+            },   
+
+            // ---------- COMPARE ----------
+            IT::CMP => { compare!(self, self.acc);    true },
+            IT::CPX => { compare!(self, self.reg_x); false },
+            IT::CPY => { compare!(self, self.reg_y); false },
+            
+            // ---------- BRANCH ----------
+            IT::BCC => { branch_if!(self, StatusFlag::Carry, false) },
+            IT::BCS => { branch_if!(self, StatusFlag::Carry, true) },
+            IT::BEQ => { branch_if!(self, StatusFlag::Zero, true) },
+            IT::BNE => { branch_if!(self, StatusFlag::Zero, false) },
+            IT::BPL => { branch_if!(self, StatusFlag::Negative, false) },
+            IT::BMI => { branch_if!(self, StatusFlag::Negative, true) },
+            IT::BVC => { branch_if!(self, StatusFlag::Overflow, false) },
+            IT::BVS => { branch_if!(self, StatusFlag::Overflow, true) },
+
+
+            // ---------- JUMP ----------
+            IT::JMP => { self.program_counter = self.addr_abs; false },
+
+            IT::JSR => {
+                self.program_counter -= 1;
+
+                self.write(STACK_BASE + (self.stack_pointer as u16), ((self.program_counter >> 8) & 0x00FF) as u8);
+                self.stack_pointer -= 1;
+                self.write(STACK_BASE + (self.stack_pointer as u16), (self.program_counter & 0x00FF) as u8);
+                self.stack_pointer -= 1;
+
+                self.program_counter = self.addr_abs;
+
+                false
+            },
+
+            IT::RTS => {
+                self.stack_pointer += 1;
+                self.program_counter = self.read(STACK_BASE + self.stack_pointer as u16, false) as u16;
+                self.stack_pointer += 1;
+                self.program_counter |= (self.read(STACK_BASE + self.stack_pointer as u16, false) as u16) << 8;
+                
+                self.program_counter += 1;
+                
+                false
+            },
 
             IT::BRK => {
                 self.program_counter += 1;
@@ -471,178 +654,7 @@ impl<P: PixelBuffer> CPU<P> {
                 
                 false
             },
-
-            IT::BVC => { branch_if!(StatusFlag::Overflow, self, false) },
-            IT::BVS => { branch_if!(StatusFlag::Overflow, self, true) },
-
-            IT::CLC => { self.set_flag(StatusFlag::Carry,            false); false },
-            IT::CLD => { self.set_flag(StatusFlag::DecimalMode,      false); false },
-            IT::CLI => { self.set_flag(StatusFlag::DisableInterupts, false); false },
-            IT::CLV => { self.set_flag(StatusFlag::Overflow,         false); false },
-
-            IT::CMP => { compare!(self, self.acc,    true) },
-            IT::CPX => { compare!(self, self.reg_x, false) },
-            IT::CPY => { compare!(self, self.reg_y, false) },
             
-            IT::DEC => {
-                self.fetch_data();
-                // todo: it used to be (fetched - 1) as u16, make sure it's the same.
-                let temp = (self.fetched.wrapping_sub(1)) as u16;
-                
-                self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                
-                self.set_flag(StatusFlag::Carry, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
-                
-                false
-            },
-            
-            IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
-            IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
-            
-            // bit-wise XOR
-            IT::EOR => {
-                self.fetch_data();
-                self.acc = self.acc ^ self.fetched;	
-                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
-                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
-                
-                true
-            },
-            
-            IT::INC => {
-                self.fetch_data();
-                let temp = (self.fetched.wrapping_add(1)) as u16;
-                
-                self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                
-                self.set_flag(StatusFlag::Carry, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
-                
-                false
-            },
-            
-            IT::INX => { self.reg_x.wrapping_add_mut(1); incr_flags!(self, self.reg_x) },
-            IT::INY => { self.reg_y.wrapping_add_mut(1); incr_flags!(self, self.reg_y) },
-
-            IT::NOP => { matches!(self.opcode, 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC) },
-            
-            IT::JMP => { self.program_counter = self.addr_abs; false },
-            IT::JSR => {
-                self.program_counter -= 1;
-
-                self.write(STACK_BASE + (self.stack_pointer as u16), ((self.program_counter >> 8) & 0x00FF) as u8);
-                self.stack_pointer -= 1;
-                self.write(STACK_BASE + (self.stack_pointer as u16), (self.program_counter & 0x00FF) as u8);
-                self.stack_pointer -= 1;
-
-                self.program_counter = self.addr_abs;
-
-                false
-            },
-
-            IT::LDA => { load!(self, self.acc  ) },
-            IT::LDX => { load!(self, self.reg_x) },
-            IT::LDY => { load!(self, self.reg_y) },
-
-            // todo: what the hell is this instruction?
-            IT::LSR => {
-                self.fetch_data();
-                
-                self.set_flag(StatusFlag::Carry, self.fetched & 0x0001 != 0);
-                let temp = (self.fetched >> 1) as u16;	
-                self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
-                
-                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
-                    self.acc = (temp & 0x00FF) as u8;
-                } else {
-                    self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                }
-                
-                false
-            },
-
-            IT::ORA => {
-                self.fetch_data();
-
-                self.acc = self.acc | self.fetched;
-                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
-                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
-
-                true
-            },
-
-            IT::PHA => {
-                self.write(STACK_BASE + (self.stack_pointer) as u16, self.acc);
-                self.stack_pointer -= 1;
-                
-                false
-            },
-
-            IT::PHP => {
-                self.write(STACK_BASE + (self.stack_pointer as u16), self.status | (StatusFlag::Carry as u8) | (StatusFlag::Unused as u8));
-                
-                self.set_flag(StatusFlag::Break, false);
-                self.set_flag(StatusFlag::Unused, false);
-                
-                self.stack_pointer -= 1;
-                
-                false
-            },
-
-            IT::PLA => {
-                self.stack_pointer += 1;
-                self.acc = self.read(STACK_BASE + self.stack_pointer as u16, false);
-                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
-                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
-                
-                false
-            },
-            
-            IT::PLP => {
-                self.stack_pointer += 1;
-                self.status = self.read(STACK_BASE + self.stack_pointer as u16, false);
-                self.set_flag(StatusFlag::Unused, true);
-
-                false
-            },
-
-            IT::ROL => {
-                self.fetch_data();
-                
-                let temp = ((self.fetched << 1) as u16) | (self.get_flag(StatusFlag::Carry) as u16);
-                
-                self.set_flag(StatusFlag::Carry, temp & 0xFF00 != 0);
-                self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
-                
-                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
-                    self.acc = (temp & 0x00FF) as u8;
-                } else {
-                    self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                }
-
-                false
-            },
-
-            IT::ROR => {
-                self.fetch_data();
-                let temp = ((self.fetched << 1) as u16) | (self.get_flag(StatusFlag::Carry) as u16);
-                
-                self.set_flag(StatusFlag::Carry, temp & 0xFF00 != 0);
-                self.set_flag(StatusFlag::Zero, (temp & 0x00FF) == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x0080 != 0);
-                
-                if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
-                    self.acc = (temp & 0x00FF) as u8;
-                } else {
-                    self.write(self.addr_abs, (temp & 0x00FF) as u8);
-                }
-                
-                false
-            },
-
             IT::RTI => {
                 self.stack_pointer += 1;
 
@@ -659,37 +671,41 @@ impl<P: PixelBuffer> CPU<P> {
                 
                 false
             },
-            
-            IT::RTS => {
-                self.stack_pointer += 1;
-                self.program_counter = self.read(STACK_BASE + self.stack_pointer as u16, false) as u16;
-                self.stack_pointer += 1;
-                self.program_counter |= (self.read(STACK_BASE + self.stack_pointer as u16, false) as u16) << 8;
+
+
+            // ---------- STACK ----------
+            IT::PHA => {
+                self.write(STACK_BASE + (self.stack_pointer) as u16, self.acc);
+                self.stack_pointer -= 1;
                 
-                self.program_counter += 1;
+                false
+            },
+            
+            IT::PLA => {
+                self.stack_pointer += 1;
+                self.acc = self.read(STACK_BASE + self.stack_pointer as u16, false);
+                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
+                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
                 
                 false
             },
 
-            IT::SEC => { self.set_flag(StatusFlag::Carry,            true); false },
-            IT::SED => { self.set_flag(StatusFlag::DecimalMode,      true); false },
-            IT::SEI => { self.set_flag(StatusFlag::DisableInterupts, true); false },
-            
-            IT::STA => { self.write(self.addr_abs, self.acc  ); false },
-            IT::STX => { self.write(self.addr_abs, self.reg_x); false },
-            IT::STY => { self.write(self.addr_abs, self.reg_y); false },
-            
-            IT::TAX => {
-                self.reg_x = self.acc;
-                self.set_flag(StatusFlag::Zero, self.reg_x == 0x00);
-                self.set_flag(StatusFlag::Negative, self.reg_x & 0x80 != 0);
+            IT::PHP => {
+                self.write(STACK_BASE + (self.stack_pointer as u16), self.status | (StatusFlag::Carry as u8) | (StatusFlag::Unused as u8));
+                
+                self.set_flag(StatusFlag::Break, false);
+                self.set_flag(StatusFlag::Unused, false);
+                
+                self.stack_pointer -= 1;
+                
                 false
             },
+            
+            IT::PLP => {
+                self.stack_pointer += 1;
+                self.status = self.read(STACK_BASE + self.stack_pointer as u16, false);
+                self.set_flag(StatusFlag::Unused, true);
 
-            IT::TAY => {
-                self.reg_y = self.acc;
-                self.set_flag(StatusFlag::Zero, self.reg_y == 0x00);
-                self.set_flag(StatusFlag::Negative, self.reg_y & 0x80 != 0);
                 false
             },
 
@@ -699,31 +715,27 @@ impl<P: PixelBuffer> CPU<P> {
                 self.set_flag(StatusFlag::Negative, self.reg_x & 0x80 != 0);
                 false
             },
-
-            IT::TXA => {
-                self.acc = self.reg_x;
-                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
-                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
-                false
-            },
-
+            
             IT::TXS => {
                 self.stack_pointer = self.reg_x;
                 false
             },
 
-            IT::TYA => {
-                self.acc = self.reg_y;
-                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
-                self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
+            // ---------- FLAGS ----------
+            IT::CLC => { self.set_flag(StatusFlag::Carry,            false); false },
+            IT::CLD => { self.set_flag(StatusFlag::DecimalMode,      false); false },
+            IT::CLI => { self.set_flag(StatusFlag::DisableInterupts, false); false },
+            IT::CLV => { self.set_flag(StatusFlag::Overflow,         false); false },
+            IT::SEC => { self.set_flag(StatusFlag::Carry,            true); false },
+            IT::SED => { self.set_flag(StatusFlag::DecimalMode,      true); false },
+            IT::SEI => { self.set_flag(StatusFlag::DisableInterupts, true); false },
 
-                false
-            },
-
+            // ---------- OTHER ----------
+            IT::NOP => { matches!(self.opcode, 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC) },
             IT::INVALID => {
                 error!("executed an invalid operation.");
                 false
-            },
+            },           
         }
     }    
 }
@@ -755,10 +767,16 @@ implement_wrapping_mut!(usize);
 
 #[cfg(test)]
 mod tests {
+    use crate::{nes::NES, rendering::DummyBuffer};
+
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn adc_test() {
+        let mut cart = Cartridge::default();
+        cart.prg_memory[0x0000] = 0x00;
+        // let mut cpu = CPU::new(cart, PPU::new(DummyBuffer::default(), DummyBuffer::default()));
+        // cpu.clock_until_next_instruction();
         // let result = add(2, 2);
         // assert_eq!(result, 4);
     }

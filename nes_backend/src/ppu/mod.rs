@@ -94,9 +94,10 @@ impl<P: PixelBuffer> PPU<P> {
             // pallette memory
             0x3F00..0x4000 => {
                 // todo: I don't know if this way of mirroring works lol, I should check; 
-                // let masked_address = address & 0x001F;
-                // let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
+                let masked_address = address & 0x001F;
+                let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
                 // let mirrored_address = if (address & 0x03) == 0 { 0 } else { address & 0x1F };
+                self.palette[mirrored_address as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
 
                 // let mirrored_address = match masked_address {
                 //     0x0010 => 0x0004,
@@ -106,12 +107,14 @@ impl<P: PixelBuffer> PPU<P> {
                 //     _ => masked_address,
                 // };
                 // self.palette[mirrored_address as usize]
-                let mut addr = address & 0x001F;
-                if addr == 0x0010 { addr = 0x0000 };
-                if addr == 0x0014 { addr = 0x0004 };
-                if addr == 0x0018 { addr = 0x0008 };
-                if addr == 0x001C { addr = 0x000C };
-                self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
+
+                // Jarvis Way
+                // let mut addr = address & 0x001F;
+                // if addr == 0x0010 { addr = 0x0000 };
+                // if addr == 0x0014 { addr = 0x0004 };
+                // if addr == 0x0018 { addr = 0x0008 };
+                // if addr == 0x001C { addr = 0x000C };
+                // self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
             },
 
             0x4000.. => unreachable!("PPU bus only goes from has address range 0x0000..0x4000"),
@@ -143,24 +146,20 @@ impl<P: PixelBuffer> PPU<P> {
             // pallette memory
             0x3F00..0x4000 => {
                 // todo: I don't know if this way of mirroring works lol, I should check; 
-                // let masked_address = address & 0x001F;
-                // let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
+                
+                // My way
+                let masked_address = address & 0x001F;
+                let mirrored_address = if masked_address % 4 == 0 { 0 } else { masked_address };
                 // let mirrored_address = if address & 0x03 == 0 { 0 } else { address & 0x1F };
-                // let mirrored_address = match masked_address {
-                //     0x0010 => 0x0004,
-                //     0x0014 => 0x0004,
-                //     0x0018 => 0x0008,
-                //     0x001C => 0x0012,
-                //     _ => masked_address,
-                // };
-                // self.palette[mirrored_address as usize] = data; 
-                let mut addr = address & 0x001F;
-                if addr == 0x0010 { addr = 0x0000 };
-                if addr == 0x0014 { addr = 0x0004 };
-                if addr == 0x0018 { addr = 0x0008 };
-                if addr == 0x001C { addr = 0x000C };
-                // data = tblPalette[addr] & (mask.grayscale ? 0x30 : 0x3F);
-                self.palette[addr as usize] = data;
+                self.palette[mirrored_address as usize] = data; 
+
+                // Jarvis way
+                // let mut addr = address & 0x001F;
+                // if addr == 0x0010 { addr = 0x0000 };
+                // if addr == 0x0014 { addr = 0x0004 };
+                // if addr == 0x0018 { addr = 0x0008 };
+                // if addr == 0x001C { addr = 0x000C };
+                // self.palette[addr as usize] = data;
             },
 
             0x4000.. => unreachable!("PPU bus only goes from has address range 0x0000..0x4000"),
@@ -170,8 +169,10 @@ impl<P: PixelBuffer> PPU<P> {
     // todo: don't know if it works, should test
     pub fn get_color_value_from_pallet_ram(&self, pallette_id: u8, pixel_id: u8) -> NesColor {
         let initial_address = (pallette_id as usize * 4) + pixel_id as usize;
-        // let initial_address = initial_address & 0x001F;
-        // let mirrored_address = if pixel_id == 0 { 0 } else { initial_address }; 
+
+        // My way
+        let initial_address = initial_address & 0x001F;
+        let addr = if pixel_id == 0 { 0 } else { initial_address }; 
 
         // let mirrored_address = if initial_address & 0x03 == 0 { 0 } else { initial_address & 0x1F };
         // let mirrored_address = match initial_address {
@@ -183,11 +184,13 @@ impl<P: PixelBuffer> PPU<P> {
         // };
         // let mirrored_address = if pixel_id == 0 { 0 } else { initial_address }; 
         // self.palette[mirrored_address as usize]
-        let mut addr = initial_address & 0x001F;
-        if addr == 0x0010 { addr = 0x0000 };
-        if addr == 0x0014 { addr = 0x0004 };
-        if addr == 0x0018 { addr = 0x0008 };
-        if addr == 0x001C { addr = 0x000C };
+
+        // Jarvis way
+        // let mut addr = initial_address & 0x001F;
+        // if addr == 0x0010 { addr = 0x0000 };
+        // if addr == 0x0014 { addr = 0x0004 };
+        // if addr == 0x0018 { addr = 0x0008 };
+        // if addr == 0x001C { addr = 0x000C };
         self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
     }
 }

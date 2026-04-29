@@ -103,3 +103,4 @@ impl PixelBuffer for BasicPixelBuffer {
         &self.buffer
     }
 }
+

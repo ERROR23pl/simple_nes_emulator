@@ -1,5 +1,5 @@
 // crate imports
-use crate::bit_operations::GetBits;
+use crate::bit_operations::BitManipulation;
 
 // std imports
 use std::fs::File;
@@ -172,15 +172,15 @@ impl INesFileHeader {
         // todo: change these into proper structs using bitfields
         // flags 6
         use NametableArrangement as NA;
-        let nametable_arrangement = if flags6.nth_flag::<0>() { NA::Vertical } else { NA::Horizontal };
-        let contains_battery_ram = flags6.nth_flag::<1>();
-        let trainer_present = flags6.nth_flag::<2>();
-        let alternative_nametable_layout = flags6.nth_flag::<3>();
+        let nametable_arrangement = if flags6.nth_flag(0) { NA::Vertical } else { NA::Horizontal };
+        let contains_battery_ram = flags6.nth_flag(1);
+        let trainer_present = flags6.nth_flag(2);
+        let alternative_nametable_layout = flags6.nth_flag(3);
         let mapper_lower_nibble = flags6 >> 4;
 
         // flags 7
-        let vs_unisystem = flags7.nth_flag::<0>();
-        let playchoice_10 = flags7.nth_flag::<1>();
+        let vs_unisystem = flags7.nth_flag(0);
+        let playchoice_10 = flags7.nth_flag(1);
         let nes20_format = (flags7 & 0b0000_1100) >> 2 == 2;
         let mapper_upper_nibble = flags7 & 0xF0;
 

@@ -1,5 +1,5 @@
 use crate::{
-    bit_operations::GetBits,
+    bit_operations::BitManipulation,
     cartridge::Cartridge,
     ppu::PPU,
     rendering::PixelBuffer
@@ -437,8 +437,8 @@ impl<P: PixelBuffer> PPU<P> {
         // we take the bottom 2 bits of the attribute word which represent which 
         // palette is being used for the current 8 pixels and the next 8 pixels, and 
         // "inflate" them to 8 bit words.
-        self.bg_shifter_attrib_lo  = (self.bg_shifter_attrib_lo & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit::<0>() == 1 { 0xFF } else { 0x00 });
-        self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit::<1>() == 1 { 0xFF } else { 0x00 });
+        self.bg_shifter_attrib_lo  = (self.bg_shifter_attrib_lo & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(0) == 1 { 0xFF } else { 0x00 });
+        self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(1) == 1 { 0xFF } else { 0x00 });
     }
 
     // ==============================================================================
