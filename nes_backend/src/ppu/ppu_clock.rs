@@ -15,18 +15,18 @@ impl<P: PixelBuffer> PPU<P> {
         // information and sprite information, compositing them into a pixel
         // to be output.
         
+        // "Odd Frame" cycle skip
         if self.scanline == 0 && self.cycle == 0 {
-            // "Odd Frame" cycle skip
             self.cycle = 1;
         }
         
-        if matches!(self.scanline, -1..240) { // visible scanline
-            if self.scanline == -1 && self.cycle == 1 {
-                // Effectively start of new frame, so clear vertical blank flag
+        match (self.scanline, self.cycle) {
+            // Effectively start of new frame, so clear vertical blank flag
+            (-1, 1) => { 
                 self.ppu_controls.status.set_vertical_blank(false);
-            }
+            },
 
-            if matches!(self.cycle, 2..258 | 321..338) {
+            (-1..240, 2..258 | 321..338) => {
                 self.update_shifters();
                 
                 // In these cycles we are collecting and working with visible data
@@ -220,36 +220,36 @@ impl<P: PixelBuffer> PPU<P> {
 
                     8.. => unreachable!("Any number modulo 8 can't be bigger than 8"),
                 }
-            }
 
-            // End of a visible scanline, so increment downwards...
-            if self.cycle == 256 {
-                self.increment_scroll_y();
-            }
+                if self.cycle == 256 {
+                    self.increment_scroll_y();
+                }
 
-            //...and reset the x position
-            if self.cycle == 257 {
-                self.load_background_shifters();
-                self.transfer_address_x();
-            }
+                if self.cycle == 257 {
+                    self.load_background_shifters();
+                    self.transfer_address_x();
+                }
+            },
 
             // Superfluous reads of tile id at end of scanline
-            if self.cycle == 338 || self.cycle == 340 {
+            (-1..240, 338 | 340) => {
                 self.bg_next_tile_id = self.read(0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF), cartridge);
-            }
+            },
 
-            if self.scanline == -1 && matches!(self.cycle, 280..305) {
+            (-1, 280..305) => {
                 // End of vertical blank period so reset the Y address ready for rendering
                 self.transfer_address_y();
-            }
-        }
+            },
+            
+            (-1..240, _) => {
+                // nothing happens on the rest of the cycles
+            },
 
-        if self.scanline == 240 {
-            // Post Render Scanline - Do Nothing!
-        }
+            (240, _) => {
+                // Post Render Scanline - Do Nothing!
+            },
 
-        if matches!(self.scanline, 241..261) {
-            if self.scanline == 241 && self.cycle == 1 {
+            (241, 1) => {
                 // Effectively end of frame, so set vertical blank flag
                 self.ppu_controls.status.set_vertical_blank(true);
 
@@ -261,20 +261,25 @@ impl<P: PixelBuffer> PPU<P> {
                 if self.ppu_controls.control.enable_nmi() {
                     self.nmi = true;
                 }
-            }
-        }
+            },
 
-        // Composition - We now have background pixel information for this cycle
-        // At this point we are only interested in background
+            (241..261, _) => {
+                // nothing happens for the rest of the scanlines
+            },
+            
+            (..-1 | SCANLINE_NUMBER.., _) => unreachable!("scanlines are only between >= -1 and max"),
 
-        let mut bg_pixel: u8 = 0x00;   // The 2-bit pixel to be rendered
-        let mut bg_palette: u8 = 0x00; // The 3-bit index of the palette the pixel indexes
+            (_, CYCLE_NUMBER..) => unreachable!("cycles are only between >= 0 and max"),
+        }    
         
         // We only render backgrounds if the PPU is enabled to do so. Note if 
         // background rendering is disabled, the pixel and palette combine
         // to form 0x00. This will fall through the colour tables to yield
         // the current background colour in effect
         if self.ppu_controls.mask.render_background() && matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
+            // Composition - We now have backgrounjd pixel information for this cycle
+            // At this point we are only interested in background
+            
             // Handle Pixel Selection by selecting the relevant bit
             // depending upon fine x scolling. This has the effect of
             // offsetting ALL background rendering by a set number
@@ -287,12 +292,12 @@ impl<P: PixelBuffer> PPU<P> {
             let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
 
             // Combine to form pixel index
-            bg_pixel = (p1_pixel << 1) | p0_pixel;
+            let bg_pixel = (p1_pixel << 1) | p0_pixel;
 
             // Get palette
             let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
             let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
-            bg_palette = (bg_pal1 << 1) | bg_pal0;
+            let bg_palette = (bg_pal1 << 1) | bg_pal0;
 
             // Now we have a final pixel colour, and a palette for this cycle
             // of the current scanline. Let's at long last, draw that ^&%*er :P
