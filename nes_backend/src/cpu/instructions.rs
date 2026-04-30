@@ -1,8 +1,6 @@
 use super::*;
 use addressing::AddressingMode;
 
-pub const STACK_BASE: u16 = 0x0100;
-
 #[derive(Default, Clone, Copy, derive_getters::Getters)]
 pub struct Instruction {
     type_: InstructionType,
@@ -297,50 +295,6 @@ pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
 
 // some of the following match branches are very repetetive.
 // The following macros help with boilerplate and reuseability.
-macro_rules! branch_if {
-    ($self:ident, $flag:expr, $bool:expr) => {
-        {
-            if $self.get_flag($flag) == $bool {
-                $self.cycles += 1;
-                $self.addr_abs = (($self.program_counter as i32) + ($self.addr_rel as i32)) as u16;
-                
-                if ($self.addr_abs & 0xFF00) != ($self.program_counter & 0xFF00) {
-                    $self.cycles += 1;
-                }
-                
-                $self.program_counter = $self.addr_abs;
-            }
-
-            false
-        }
-    };
-}   
-
-macro_rules! compare {
-    ($self:ident, $register:expr) => {
-        {
-            $self.fetch_data();
-            // let temp = ($register as i16) - ($self.fetched as i16);
-            let temp = $register.wrapping_sub($self.fetched);
-
-            $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
-            $self.set_flag(StatusFlag::Zero, $register == $self.fetched);
-            $self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0); // todo: is this correct?
-        }
-    };
-}
-
-macro_rules! incr_flags {
-    ($self:ident, $register:expr) => {
-        {
-            $self.set_flag(StatusFlag::Zero, $register == 0x00);
-            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
-            
-            false
-        }
-    };
-}
-
 macro_rules! load {
     ($self:ident, $register:expr) => {
         {
@@ -365,7 +319,50 @@ macro_rules! transfer {
     };
 }
 
-// todo: change all `& 0x80 != 0` to a function that checks if number is negative as i8
+macro_rules! incr_flags {
+    ($self:ident, $register:expr) => {
+        {
+            $self.set_flag(StatusFlag::Zero, $register == 0x00);
+            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
+            
+            false
+        }
+    };
+}
+
+macro_rules! compare {
+    ($self:ident, $register:expr) => {
+        {
+            $self.fetch_data();
+            // let temp = ($register as i16) - ($self.fetched as i16);
+            let temp = $register.wrapping_sub($self.fetched);
+
+            $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
+            $self.set_flag(StatusFlag::Zero, $register == $self.fetched);
+            $self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0); // todo: is this correct?
+        }
+    };
+}
+
+macro_rules! branch_if {
+    ($self:ident, $flag:expr, $bool:expr) => {
+        {
+            if $self.get_flag($flag) == $bool {
+                $self.cycles += 1;
+                $self.addr_abs = (($self.program_counter as i32) + ($self.addr_rel as i32)) as u16;
+                
+                if get_high_byte($self.addr_abs) != get_high_byte($self.program_counter) {
+                    $self.cycles += 1;
+                }
+                
+                $self.program_counter = $self.addr_abs;
+            }
+
+            false
+        }
+    };
+}
+
 impl<P: PixelBuffer> CPU<P> {
     fn fetch_data(&mut self) -> u8 {
         let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
@@ -533,6 +530,7 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
 
+            // Rotate right
             IT::ROR => {
                 self.fetch_data();
                 let carry_flag = self.get_flag(StatusFlag::Carry) as u8;
@@ -610,26 +608,30 @@ impl<P: PixelBuffer> CPU<P> {
 
 
             // ---------- JUMP ----------
-            IT::JMP => { self.program_counter = self.addr_abs; false },
+            IT::JMP => {
+                self.program_counter = self.addr_abs;
 
+                false
+            },
+
+            // jump to subroutine
             IT::JSR => {
                 self.program_counter -= 1;
 
-                self.write(STACK_BASE + (self.stack_pointer as u16), ((self.program_counter >> 8) & 0x00FF) as u8);
-                self.stack_pointer -= 1;
-                self.write(STACK_BASE + (self.stack_pointer as u16), (self.program_counter & 0x00FF) as u8);
-                self.stack_pointer -= 1;
+                let (pc_high, pc_low) = split_u16(self.program_counter);
+                self.push_to_stack(pc_high);
+                self.push_to_stack(pc_low);
 
                 self.program_counter = self.addr_abs;
 
                 false
             },
 
+            // return from subroutine
             IT::RTS => {
-                self.stack_pointer += 1;
-                self.program_counter = self.read(STACK_BASE + self.stack_pointer as u16, false) as u16;
-                self.stack_pointer += 1;
-                self.program_counter |= (self.read(STACK_BASE + self.stack_pointer as u16, false) as u16) << 8;
+                // the order of variables is important
+                let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
+                self.program_counter = glue_u8s(pc_high, pc_low);
                 
                 self.program_counter += 1;
                 
@@ -640,14 +642,13 @@ impl<P: PixelBuffer> CPU<P> {
                 self.program_counter += 1;
 	
                 self.set_flag(StatusFlag::DisableInterupts, true);
-                self.write(STACK_BASE + (self.stack_pointer as u16), ((self.program_counter >> 8) & 0x00FF) as u8);
-                self.stack_pointer -= 1;
-                self.write(STACK_BASE + (self.stack_pointer as u16), ((self.program_counter) & 0x00FF) as u8);
-                self.stack_pointer -= 1;
+                
+                let (pc_high, pc_low) = split_u16(self.program_counter);
+                self.push_to_stack(pc_high);
+                self.push_to_stack(pc_low);
                 
                 self.set_flag(StatusFlag::Break, true);
-                self.write(STACK_BASE + (self.stack_pointer as u16), self.status);
-                self.stack_pointer -= 1;
+                self.push_to_stack(self.status);
                 self.set_flag(StatusFlag::Break, false);
 
                 self.program_counter = self.read(0xFFFE, false) as u16 | ((self.read(0xFFFF, false) as u16) << 8);
@@ -655,19 +656,15 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
             
+            // ReTurn from Interupt
             IT::RTI => {
-                self.stack_pointer += 1;
-
-                self.status = self.read(STACK_BASE + self.stack_pointer as u16, false);
-                self.status &= !(StatusFlag::Break as u8);
-                self.status &= !(StatusFlag::Unused as u8);
-
-                self.stack_pointer += 1;
+                self.status = self.pop_from_stack();
                 
-                self.program_counter = self.read(STACK_BASE + self.stack_pointer as u16, false) as u16;
-                self.stack_pointer += 1;
+                self.set_flag(StatusFlag::Break, false);  // used to be: self.status &= !(StatusFlag::Break as u8);
+                self.set_flag(StatusFlag::Unused, false); // used to be: self.status &= !(StatusFlag::Unused as u8);
                 
-                self.program_counter |= (self.read(STACK_BASE + self.stack_pointer as u16, false) as u16) << 8;
+                let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
+                self.program_counter = glue_u8s(pc_high, pc_low);               
                 
                 false
             },
@@ -675,49 +672,46 @@ impl<P: PixelBuffer> CPU<P> {
 
             // ---------- STACK ----------
             IT::PHA => {
-                self.write(STACK_BASE + (self.stack_pointer) as u16, self.acc);
-                self.stack_pointer -= 1;
+                self.push_to_stack(self.acc);
                 
                 false
             },
-            
+
+            // Pull A
             IT::PLA => {
-                self.stack_pointer += 1;
-                self.acc = self.read(STACK_BASE + self.stack_pointer as u16, false);
+                self.acc = self.pop_from_stack();
+                
                 self.set_flag(StatusFlag::Zero, self.acc == 0x00);
                 self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
                 
                 false
             },
 
+            // Push processor status
             IT::PHP => {
-                self.write(STACK_BASE + (self.stack_pointer as u16), self.status | (StatusFlag::Carry as u8) | (StatusFlag::Unused as u8));
+                self.push_to_stack(
+                    self.status | (StatusFlag::Break as u8) | (StatusFlag::Unused as u8)
+                );
                 
                 self.set_flag(StatusFlag::Break, false);
                 self.set_flag(StatusFlag::Unused, false);
-                
-                self.stack_pointer -= 1;
                 
                 false
             },
             
             IT::PLP => {
-                self.stack_pointer += 1;
-                self.status = self.read(STACK_BASE + self.stack_pointer as u16, false);
+                self.status = self.pop_from_stack();
+                
                 self.set_flag(StatusFlag::Unused, true);
 
                 false
             },
 
-            IT::TSX => {
-                self.reg_x = self.stack_pointer;
-                self.set_flag(StatusFlag::Zero, self.reg_x == 0x00);
-                self.set_flag(StatusFlag::Negative, self.reg_x & 0x80 != 0);
-                false
-            },
+            IT::TSX => { transfer!(self, stack_pointer, reg_x) },
             
             IT::TXS => {
                 self.stack_pointer = self.reg_x;
+
                 false
             },
 

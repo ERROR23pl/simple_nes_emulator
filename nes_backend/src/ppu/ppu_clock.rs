@@ -14,13 +14,13 @@ impl<P: PixelBuffer> PPU<P> {
         // a state machine going through the motions of fetching background 
         // information and sprite information, compositing them into a pixel
         // to be output.
-
+        
+        if self.scanline == 0 && self.cycle == 0 {
+            // "Odd Frame" cycle skip
+            self.cycle = 1;
+        }
+        
         if matches!(self.scanline, -1..240) { // visible scanline
-            if self.scanline == 0 && self.cycle == 0 {
-                // "Odd Frame" cycle skip
-                self.cycle = 1;
-            }
-
             if self.scanline == -1 && self.cycle == 1 {
                 // Effectively start of new frame, so clear vertical blank flag
                 self.ppu_controls.status.set_vertical_blank(false);

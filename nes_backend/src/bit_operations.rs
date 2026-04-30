@@ -49,6 +49,7 @@ pub fn glue_u8s(high_byte: u8, low_byte: u8) -> u16 {
 }
 
 #[inline]
+/// returns tuple `(high_byte, low_byte)`
 pub fn split_u16(whole: u16) -> (u8, u8) {
     (get_high_byte(whole), get_low_byte(whole)) 
 }

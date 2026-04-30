@@ -22,10 +22,11 @@ pub enum AddressingMode {
 impl<P: PixelBuffer> CPU<P> {
     pub fn find_data(&mut self, mode: AddressingMode) -> bool {
         use AddressingMode as AM;
-        let may_need_another_cycle = match mode {
+        match mode {
             AM::IMP => {
-                // operation has to have access to accumulator becaue it might want to use it
+                // operation has to have access to accumulator because it might want to use it
                 self.fetched = self.acc;
+
                 false
             },
 
@@ -39,30 +40,32 @@ impl<P: PixelBuffer> CPU<P> {
             AM::ZP0 => {
                 self.addr_abs = self.read(self.program_counter, false) as u16;	
                 self.program_counter += 1;
-                self.addr_abs &= 0x00FF; // ? I don't think we have to do that.
+                // self.addr_abs &= 0x00FF; // ? I'm fairly certain we don't need to do that here.
                 
                 false
             },
 
             AM::ZPX => {
-                self.addr_abs = self.read(self.program_counter + self.reg_x as u16, false) as u16;
+                // self.addr_abs = self.read(self.program_counter, false) as u16 + self.reg_x as u16;
+                self.addr_abs = self.read(self.program_counter, false).wrapping_add(self.reg_x) as u16;
                 self.program_counter += 1;
-                self.addr_abs &= 0x00FF; // ? I don't think we have to do that.
-
+                // self.addr_abs &= 0x00FF; // adding `reg_x` can make us cross the page boundry, which wraps around
+                
                 false
             },
-
+            
             AM::ZPY => {
-                self.addr_abs = self.read(self.program_counter + self.reg_y as u16, false) as u16;
+                // self.addr_abs = self.read(self.program_counter, false) as u16 + self.reg_y as u16;
+                self.addr_abs = self.read(self.program_counter, false).wrapping_add(self.reg_y) as u16;
                 self.program_counter += 1;
-                self.addr_abs &= 0x00FF; // ? I don't think we have to do that.
+                // self.addr_abs &= 0x00FF; // adding `reg_y` can make us cross the page boundry, which wraps around
 
                 false
             },
 
             // todo: perhaps I fucked up this relative addressing thing?
             AM::REL => {
-                self.addr_rel = self.read(self.program_counter, false) as u16/* as i8 */;
+                self.addr_rel = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
                 if self.addr_rel & 0x80 != 0 {
@@ -119,7 +122,7 @@ impl<P: PixelBuffer> CPU<P> {
                 
                 let address_low_byte = self.read(pointer, false);
                 
-                // ! This is a bug in the NES hardware. If the low byte of the pointer
+                // ! The following is a bug in the NES hardware. If the low byte of the pointer
                 // ! happens to be 0xFF then it points to the end of the page.
                 // ! In this case to get the high byte of the address we have to cross the page boundry
                 // ! and add 1 to the pointer. This should change the high byte of the pointer, but
@@ -137,47 +140,32 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
 
-            // todo: change `t` name variable
+            // there's a pointer to the propper adress on the zero page in a location sepcified as an argument
             AM::IZX => {
-                let t = self.read(self.program_counter, false) as u16;
+                let address_at_page_zero = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte  = self.read((t + self.reg_x as u16 + 0) & 0x00FF, false);
-                let high_byte = self.read((t + self.reg_x as u16 + 1) & 0x00FF, false);
+                let low_byte  = self.read((address_at_page_zero + self.reg_x as u16 + 0) & 0x00FF, false);
+                let high_byte = self.read((address_at_page_zero + self.reg_x as u16 + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte);
                 
                 false
             },
 
+            // notice that this works a bit differently than IZX
             AM::IZY => {
-                let t = self.read(self.program_counter, false) as u16;
+                let address_at_page_zero = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte = self.read((t + 0) & 0x00FF, false);
-                let high_byte = self.read((t + 1) & 0x00FF, false);
+                let low_byte  = self.read((address_at_page_zero + 0) & 0x00FF, false);
+                let high_byte = self.read((address_at_page_zero + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte) + self.reg_y as u16;
 
                 // if we cross the page boundry we need another clock cycle    
                 get_high_byte(self.addr_abs) != high_byte
             },
-        };
-        
-        // match mode {
-        //     AM::IMP => {
-        //         debug!("data source is implied.");
-        //     },
-
-        //     AM::REL => {
-        //         debug!("addr_rel = {}", self.addr_rel);
-        //     },
-
-        //     _ => {
-        //         debug!("addr_abs = ${:04X}", self.addr_abs);
-        //     },
-        // };
-
-        may_need_another_cycle
+        }
     }
 }

@@ -19,6 +19,7 @@ use log::{error, warn};
 
 // constants
 pub const CPU_RAM_SIZE: usize = 2 * KB;
+pub const STACK_BASE: u16 = 0x0100;
 
 pub const CONTROL: u16 = 0;
 pub const MASK: u16 = 1;
@@ -85,24 +86,6 @@ impl<P: PixelBuffer> CPU<P> {
  
 }
 
-// for now it's used only for printing
-#[bitfield(bits=8)]
-#[derive(Debug)]
-pub struct Status {
-    carry: bool,
-    zero: bool,
-    disableinterupts: bool,
-    decimalmode: bool,
-    break_: bool,
-    unused: bool,
-    overflow: bool,
-    negative: bool,
-}
-
-macro_rules! RAM_RANGE { () => { 0x0000..0x2000 }; }
-macro_rules! PPU_RANGE { () => { 0x2000..0x4000 }; }
-macro_rules! PROGRAM_ROM_RANGE { () => { 0x4020..=0xFFFF }; }
-
 
 impl<P: PixelBuffer> CPU<P> {
     fn set_flag(&mut self, flag: StatusFlag, value: bool) {
@@ -119,9 +102,9 @@ impl<P: PixelBuffer> CPU<P> {
 
     pub fn write(&mut self, address: u16, data: u8) {
         match address {
-            RAM_RANGE!() => { self.ram[(address & 0x07FF) as usize] = data },
-            PPU_RANGE!() => { self.cpu_write_to_ppu(address & 0x0007, data) },
-            PROGRAM_ROM_RANGE!() => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
+            0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
+            0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
+            0x4020..=0xFFFF => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
             _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
         }
     }
@@ -131,9 +114,9 @@ impl<P: PixelBuffer> CPU<P> {
     // if one would want to read from them without modifying the state
     pub fn read(&mut self, address: u16, read_only: bool) -> u8 {
         match address {
-            RAM_RANGE!() => self.ram[(address & 0x07FF) as usize],
-            PPU_RANGE!() => self.cpu_read_from_ppu(address & 0x0007, read_only),
-            PROGRAM_ROM_RANGE!() => self.cartridge.cpu_read(address), // todo: is this correct?
+            0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
+            0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
+            0x4020..=0xFFFF => self.cartridge.cpu_read(address), // todo: is this correct?
             _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
         }
     }
@@ -276,9 +259,8 @@ impl<P: PixelBuffer> CPU<P> {
     pub fn reset(&mut self) {
         // Get address to set program counter to and set it
         self.addr_abs = 0xFFFC;
-        let low_byte = self.read(self.addr_abs, false); // todo: I have a function for this self.read_addr_abs_twice()
-        let high_byte = self.read(self.addr_abs + 1, false);
-        self.program_counter = glue_u8s(high_byte, low_byte);
+        self.program_counter = self.read_u16_at_addr_abs();
+
         
         // Reset internal registers
         self.acc = 0;
@@ -299,23 +281,19 @@ impl<P: PixelBuffer> CPU<P> {
     #[inline]
     fn interrupt<const ADR: u16>(&mut self) {
         // push the program counter to the stack.
-        let (program_counter_high, program_counter_low) = split_u16(self.program_counter);
-        self.write(STACK_BASE + (self.stack_pointer as u16), program_counter_high);
-        self.stack_pointer -= 1;
-        self.write(STACK_BASE + (self.stack_pointer as u16), program_counter_low);
-        self.stack_pointer -= 1;
+        let (pc_high, pc_low) = split_u16(self.program_counter);
+        self.push_to_stack(pc_high);
+        self.push_to_stack(pc_low);
         
         // push the status register to the stack
         self.set_flag(StatusFlag::Break, false);
         self.set_flag(StatusFlag::Unused, true);
         self.set_flag(StatusFlag::DisableInterupts, true);
-        
-        self.write(STACK_BASE + (self.stack_pointer as u16), self.status);
-        self.stack_pointer -= 1;
+        self.push_to_stack(self.status);
 
         // new program counter is located at a fixed address.
         // note: the adress is different depending on whether it was a
-        // maskable or not interrupt. I made this function generic
+        // maskable or nonmaskable interrupt. I made this function generic
         // over that adress to not repeat code
         self.addr_abs = ADR;
         self.program_counter = self.read_u16_at_addr_abs()
@@ -332,8 +310,16 @@ impl<P: PixelBuffer> CPU<P> {
         self.interrupt::<0xFFFA>();
         self.cycles = 8;
     }
-
     
+    fn push_to_stack(&mut self, value: u8) {
+        self.write(STACK_BASE + self.stack_pointer as u16, value);
+        self.stack_pointer -= 1;
+    }
+
+    fn pop_from_stack(&mut self) -> u8 {
+        self.stack_pointer += 1;
+        self.read(STACK_BASE + self.stack_pointer as u16, false)
+    }
 
     pub fn ppu_clock(&mut self) {
         self.ppu.clock(&mut self.cartridge);
@@ -412,4 +398,18 @@ impl<P: PixelBuffer> CPU<P> {
             self.clock();
         }
     }
+}
+
+// for now it's used only for printing
+#[bitfield(bits=8)]
+#[derive(Debug)]
+pub struct Status {
+    carry: bool,
+    zero: bool,
+    disableinterupts: bool,
+    decimalmode: bool,
+    break_: bool,
+    unused: bool,
+    overflow: bool,
+    negative: bool,
 }
