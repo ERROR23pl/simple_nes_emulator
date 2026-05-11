@@ -1,7 +1,7 @@
 use crate::{
     bit_operations::BitManipulation,
     cartridge::Cartridge,
-    ppu::PPU,
+    ppu::{PPU, ppu_controls::PPUControlRegisters},
     rendering::PixelBuffer
 };
 
@@ -37,6 +37,7 @@ impl<P: PixelBuffer> PPU<P> {
 
                 // Fortunately, for background rendering, we go through a fairly
                 // repeatable sequence of events, every 2 clock cycles.
+                const NAMETABLE_MEMORY_OFFSET: u16 = 0x2000;
                 match (self.cycle - 1) % 8 {
                     0 => {
                         // Load the current background tile pattern and attributes into the "shifter"
@@ -111,11 +112,11 @@ impl<P: PixelBuffer> PPU<P> {
                         //                                      from 5 bits to 3 bits,
                         //                                      shift to make room for coarse x
                         const ATTRIBUTE_MEMORY_OFFSET: u16 = 32 * 30;
-                        const NAMETABLE_MEMORY_OFFSET: u16 = 0x2000;
                         let (_, nametable_y, nametable_x, coarse_y, coarse_x) = &self.ppu_controls.vram_address.dissolve_u16();
                         
                         self.bg_next_tile_attrib = self.read(
-                            NAMETABLE_MEMORY_OFFSET + ATTRIBUTE_MEMORY_OFFSET + (
+                            NAMETABLE_MEMORY_OFFSET +
+                            ATTRIBUTE_MEMORY_OFFSET + (
                                 (nametable_y << 11) | (nametable_x << 10) | ((coarse_y >> 2) << 3) | (coarse_x >> 2)
                             ),
                             cartridge
@@ -213,7 +214,7 @@ impl<P: PixelBuffer> PPU<P> {
                         // Increment the background tile "pointer" to the next tile horizontally
                         // in the nametable memory. Note this may cross nametable boundaries which
                         // is a little complex, but essential to implement scrolling
-                        self.increment_scroll_x();
+                        self.ppu_controls.increment_scroll_x();
                     },
 
                     1 | 3 | 5 => { /* on these frames we do nothing */ },
@@ -222,12 +223,12 @@ impl<P: PixelBuffer> PPU<P> {
                 }
 
                 if self.cycle == 256 {
-                    self.increment_scroll_y();
+                    self.ppu_controls.increment_scroll_y();
                 }
 
                 if self.cycle == 257 {
                     self.load_background_shifters();
-                    self.transfer_address_x();
+                    self.ppu_controls.transfer_address_x();
                 }
             },
 
@@ -238,7 +239,7 @@ impl<P: PixelBuffer> PPU<P> {
 
             (-1, 280..305) => {
                 // End of vertical blank period so reset the Y address ready for rendering
-                self.transfer_address_y();
+                self.ppu_controls.transfer_address_y();
             },
             
             (-1..240, _) => {
@@ -276,33 +277,38 @@ impl<P: PixelBuffer> PPU<P> {
         // background rendering is disabled, the pixel and palette combine
         // to form 0x00. This will fall through the colour tables to yield
         // the current background colour in effect
-        if self.ppu_controls.mask.render_background() && matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
-            // Composition - We now have backgrounjd pixel information for this cycle
-            // At this point we are only interested in background
+        if matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
+            let color = if self.ppu_controls.mask.render_background() {
+                // Composition - We now have backgrounjd pixel information for this cycle
+                // At this point we are only interested in background
+                
+                // Handle Pixel Selection by selecting the relevant bit
+                // depending upon fine x scolling. This has the effect of
+                // offsetting ALL background rendering by a set number
+                // of pixels, permitting smooth scrolling
+                let bit_mux: u16 = 0x8000 >> self.ppu_controls.fine_x;
+    
+                // Select Plane pixels by extracting from the shifter 
+                // at the required location. 
+                let p0_pixel: u8 = ((self.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
+                let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
+    
+                // Combine to form pixel index
+                let bg_pixel = (p1_pixel << 1) | p0_pixel;
+    
+                // Get palette
+                let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
+                let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
+                let bg_palette = (bg_pal1 << 1) | bg_pal0;
+
+                self.get_color_value_from_pallet_ram(bg_palette, bg_pixel)
+
+            } else {
+                0x00
+            };
             
-            // Handle Pixel Selection by selecting the relevant bit
-            // depending upon fine x scolling. This has the effect of
-            // offsetting ALL background rendering by a set number
-            // of pixels, permitting smooth scrolling
-            let bit_mux: u16 = 0x8000 >> self.ppu_controls.fine_x;
-
-            // Select Plane pixels by extracting from the shifter 
-            // at the required location. 
-            let p0_pixel: u8 = ((self.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
-            let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
-
-            // Combine to form pixel index
-            let bg_pixel = (p1_pixel << 1) | p0_pixel;
-
-            // Get palette
-            let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
-            let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
-            let bg_palette = (bg_pal1 << 1) | bg_pal0;
-
             // Now we have a final pixel colour, and a palette for this cycle
             // of the current scanline. Let's at long last, draw that ^&%*er :P
-
-            let color = self.get_color_value_from_pallet_ram(bg_palette, bg_pixel);
             self.screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
         }    
 
@@ -319,111 +325,6 @@ impl<P: PixelBuffer> PPU<P> {
         }
     }
     
-    // ==============================================================================
-    // Increment the background tile "pointer" one tile/column horizontally
-    pub fn increment_scroll_y(&mut self) {
-        // Incrementing vertically is more complicated. The visible nametable
-        // is 32x30 tiles, but in memory there is enough room for 32x32 tiles.
-        // The bottom two rows of tiles are in fact not tiles at all, they
-        // contain the "attribute" information for the entire table. This is
-        // information that describes which palettes are used for different 
-        // regions of the nametable.
-        
-        // In addition, the NES doesnt scroll vertically in chunks of 8 pixels
-        // i.e. the height of a tile, it can perform fine scrolling by using
-        // the fine_y component of the register. This means an increment in Y
-        // first adjusts the fine offset, but may need to adjust the whole
-        // row offset, since fine_y is a value 0 to 7, and a row is 8 pixels high
-
-        // Ony if rendering is enabled
-        if self.ppu_controls.mask.render_background() || self.ppu_controls.mask.render_sprites() {
-            // If possible, just increment the fine y offset
-            if self.ppu_controls.vram_address.fine_y() < 7 {
-                self.ppu_controls.vram_address.set_fine_y(self.ppu_controls.vram_address.fine_y() + 1);
-                return;
-            }
-
-            // If we have gone beyond the height of a row, we need to
-            // increment the row, potentially wrapping into neighbouring
-            // vertical nametables. Dont forget however, the bottom two rows
-            // do not contain tile information. The coarse y offset is used
-            // to identify which row of the nametable we want, and the fine
-            // y offset is the specific "scanline"
-
-            // Reset fine y offset
-            self.ppu_controls.vram_address.set_fine_y(0);
-
-            // Check if we need to swap vertical nametable targets
-            if self.ppu_controls.vram_address.coarse_y() == 29 {
-                // We do, so reset coarse y offset
-                self.ppu_controls.vram_address.set_coarse_y(0);
-                // And flip the target nametable bit
-                self.ppu_controls.vram_address.set_nametable_y(!self.ppu_controls.vram_address.nametable_y());
-            }
-            else if self.ppu_controls.vram_address.coarse_y() == 31 {
-                // In case the pointer is in the attribute memory, we
-                // just wrap around the current nametable
-                self.ppu_controls.vram_address.set_coarse_y(0);
-            }
-            else {
-                // None of the above boundary/wrapping conditions apply
-                // so just increment the coarse y offset
-                self.ppu_controls.vram_address.set_coarse_y(self.ppu_controls.vram_address.coarse_y() + 1);
-            }
-        }
-    }
-
-    // ==============================================================================
-    // Increment the background tile "pointer" one scanline vertically       
-    fn increment_scroll_x(&mut self) {
-        // Note: pixel perfect scrolling horizontally is handled by the 
-        // data shifters. Here we are operating in the spatial domain of 
-        // tiles, 8x8 pixel blocks.
-        
-        // Ony if rendering is enabled
-        if self.ppu_controls.mask.render_background() || self.ppu_controls.mask.render_sprites() {
-            // A single name table is 32x30 tiles. As we increment horizontally
-            // we may cross into a neighbouring nametable, or wrap around to
-            // a neighbouring nametable
-            if self.ppu_controls.vram_address.coarse_x() == 31 {
-                // Leaving nametable so wrap address round
-                self.ppu_controls.vram_address.set_coarse_x(0);
-                // Flip target nametable bit
-                self.ppu_controls.vram_address.set_nametable_x(!self.ppu_controls.vram_address.nametable_x());
-            }
-            else {
-                // Staying in current nametable, so just increment
-                self.ppu_controls.vram_address.set_coarse_x(self.ppu_controls.vram_address.coarse_x() + 1);
-            }
-        }
-    }
-
-    // ==============================================================================
-    // Transfer the temporarily stored horizontal nametable access information
-    // into the "pointer". Note that fine x scrolling is not part of the "pointer"
-    // addressing mechanism    
-    fn transfer_address_x(&mut self) {
-        // Ony if rendering is enabled
-        if self.ppu_controls.mask.render_background() || self.ppu_controls.mask.render_sprites() {
-            self.ppu_controls.vram_address.set_nametable_x(self.ppu_controls.tram_address.nametable_x());
-            self.ppu_controls.vram_address.set_coarse_x(self.ppu_controls.tram_address.coarse_x());
-        }
-    }
-    
-    // ==============================================================================
-    // Transfer the temporarily stored vertical nametable access information
-    // into the "pointer". Note that fine y scrolling is part of the "pointer"
-    // addressing mechanism 
-    fn transfer_address_y(&mut self) {
-        // Ony if rendering is enabled
-        if self.ppu_controls.mask.render_background() || self.ppu_controls.mask.render_sprites() {
-            self.ppu_controls.vram_address.set_fine_y(self.ppu_controls.tram_address.fine_y());
-            self.ppu_controls.vram_address.set_nametable_y(self.ppu_controls.tram_address.nametable_y());
-            self.ppu_controls.vram_address.set_coarse_y(self.ppu_controls.tram_address.coarse_y());
-        }
-    }
-
-    // ==============================================================================
     // Prime the "in-effect" background tile shifters ready for outputting next
     // 8 pixels in scanline. 
     fn load_background_shifters(&mut self) {	
@@ -446,7 +347,6 @@ impl<P: PixelBuffer> PPU<P> {
         self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(1) == 1 { 0xFF } else { 0x00 });
     }
 
-    // ==============================================================================
     // Every cycle the shifters storing pattern and attribute information shift
     // their contents by 1 bit. This is because every cycle, the output progresses
     // by 1 pixel. This means relatively, the state of the shifter is in sync
@@ -467,26 +367,105 @@ impl<P: PixelBuffer> PPU<P> {
     }
 }
 
-// macro_rules! load_background_shifters {
-//     ($self:ident) => {
-//         $self.bg_shifter_pattern_lo = ($self.bg_shifter_pattern_lo & 0xFF00) | $self.bg_next_tile_lsb as u16;
-//         $self.bg_shifter_pattern_hi = ($self.bg_shifter_pattern_hi & 0xFF00) | $self.bg_next_tile_msb as u16;
-//         $self.bg_shifter_attrib_lo  = ($self.bg_shifter_attrib_lo & 0xFF00) | (if $self.bg_next_tile_attrib & 0b01 != 0 { 0xFF } else { 0x00 });
-//         $self.bg_shifter_attrib_hi  = ($self.bg_shifter_attrib_hi & 0xFF00) | (if $self.bg_next_tile_attrib & 0b10 != 0 { 0xFF } else { 0x00 });
-//     };
-// }
+impl PPUControlRegisters {
+    // Increment the background tile "pointer" one tile/column horizontally
+    fn increment_scroll_x(&mut self) {
+        // Note: pixel perfect scrolling horizontally is handled by the 
+        // data shifters. Here we are operating in the spatial domain of 
+        // tiles, 8x8 pixel blocks.
+        
+        // Ony if rendering is enabled
+        if !(self.mask.render_background() || self.mask.render_sprites()) {
+            return;
+        }
+        
+        // A single name table is 32x30 tiles. As we increment horizontally
+        // we may cross into a neighbouring nametable, or wrap around to
+        // a neighbouring nametable
+        if self.vram_address.coarse_x() == 31 {
+            // Leaving nametable so wrap address round
+            self.vram_address.set_coarse_x(0);
+            // Flip target nametable bit
+            self.vram_address.set_nametable_x(!self.vram_address.nametable_x());
+        } else {
+            // Staying in current nametable, so just increment
+            self.vram_address.set_coarse_x(self.vram_address.coarse_x() + 1);
+        }
+    }
 
-// macro_rules! update_shifters {
-//     ($self:ident) => {
-//         if $self.ppu_controls.mask.render_background() {
-//             // Shifting background tile pattern row
-//             $self.bg_shifter_pattern_lo <<= 1;
-//             $self.bg_shifter_pattern_hi <<= 1;
+    // Increment the background tile "pointer" one scanline vertically
+    pub fn increment_scroll_y(&mut self) {
+        // Incrementing vertically is more complicated. The visible nametable
+        // is 32x30 tiles, but in memory there is enough room for 32x32 tiles.
+        // The bottom two rows of tiles are in fact not tiles at all, they
+        // contain the "attribute" information for the entire table. This is
+        // information that describes which palettes are used for different 
+        // regions of the nametable.
+        
+        // In addition, the NES doesnt scroll vertically in chunks of 8 pixels
+        // i.e. the height of a tile, it can perform fine scrolling by using
+        // the fine_y component of the register. This means an increment in Y
+        // first adjusts the fine offset, but may need to adjust the whole
+        // row offset, since fine_y is a value 0 to 7, and a row is 8 pixels high
 
-//             // Shifting palette attributes by 1
-//             $self.bg_shifter_attrib_lo <<= 1;
-//             $self.bg_shifter_attrib_hi <<= 1;
-//         }        
-//     };
-// }
+        // Ony if rendering is enabled
+        if self.mask.render_background() || self.mask.render_sprites() {
+            // If possible, just increment the fine y offset
+            if self.vram_address.fine_y() < 7 {
+                self.vram_address.set_fine_y(self.vram_address.fine_y() + 1);
+                return;
+            }
 
+            // If we have gone beyond the height of a row, we need to
+            // increment the row, potentially wrapping into neighbouring
+            // vertical nametables. Dont forget however, the bottom two rows
+            // do not contain tile information. The coarse y offset is used
+            // to identify which row of the nametable we want, and the fine
+            // y offset is the specific "scanline"
+
+            // Reset fine y offset
+            self.vram_address.set_fine_y(0);
+
+            // Check if we need to swap vertical nametable targets
+            if self.vram_address.coarse_y() == 29 {
+                // We do, so reset coarse y offset
+                self.vram_address.set_coarse_y(0);
+                // And flip the target nametable bit
+                self.vram_address.set_nametable_y(!self.vram_address.nametable_y());
+            }
+            else if self.vram_address.coarse_y() == 31 {
+                // In case the pointer is in the attribute memory, we
+                // just wrap around the current nametable
+                self.vram_address.set_coarse_y(0);
+            }
+            else {
+                // None of the above boundary/wrapping conditions apply
+                // so just increment the coarse y offset
+                self.vram_address.set_coarse_y(self.vram_address.coarse_y() + 1);
+            }
+        }
+    }
+
+    // Transfer the temporarily stored horizontal nametable access information
+    // into the "pointer". Note that fine x scrolling is not part of the "pointer"
+    // addressing mechanism    
+    fn transfer_address_x(&mut self) {
+        // Ony if rendering is enabled
+        if self.mask.render_background() || self.mask.render_sprites() {
+            self.vram_address.set_nametable_x(self.tram_address.nametable_x());
+            self.vram_address.set_coarse_x(self.tram_address.coarse_x());
+        }
+    }
+    
+    // Transfer the temporarily stored vertical nametable access information
+    // into the "pointer". Note that fine y scrolling is part of the "pointer"
+    // addressing mechanism 
+    fn transfer_address_y(&mut self) {
+        // Ony if rendering is enabled
+        if self.mask.render_background() || self.mask.render_sprites() {
+            self.vram_address.set_fine_y(self.tram_address.fine_y());
+            self.vram_address.set_nametable_y(self.tram_address.nametable_y());
+            self.vram_address.set_coarse_y(self.tram_address.coarse_y());
+        }
+    }
+}

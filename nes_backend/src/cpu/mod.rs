@@ -45,6 +45,8 @@ pub struct CPU<P: PixelBuffer> {
     ram: [u8; CPU_RAM_SIZE],
     cartridge: Cartridge,
     pub ppu: PPU<P>,
+    pub controlers: [u8; 2],
+    controlers_state: [u8; 2],
     
     // helper variables
     fetched: u8,
@@ -70,6 +72,8 @@ impl<P: PixelBuffer> CPU<P> {
             ram: [0; CPU_RAM_SIZE],
             cartridge,
             ppu,
+            controlers: [0, 0],
+            controlers_state: [0, 0],
 
             // helper variables
             fetched: 0,
@@ -104,6 +108,9 @@ impl<P: PixelBuffer> CPU<P> {
         match address {
             0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
             0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
+            0x4016 | 0x4017 => {
+                self.controlers_state[(address & 0x0001) as usize] = self.controlers[(address & 0x0001) as usize]
+            }
             0x4020..=0xFFFF => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
             _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
         }
@@ -117,6 +124,12 @@ impl<P: PixelBuffer> CPU<P> {
             0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
             0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
             0x4020..=0xFFFF => self.cartridge.cpu_read(address), // todo: is this correct?
+            0x4016 | 0x4017 => {
+                let most_significant_bit = (self.controlers_state[(address & 0x0001) as usize] & 0x80) << 7;
+                self.controlers_state[(address & 0x0001) as usize] <<= 1;
+
+                most_significant_bit
+            }
             _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
         }
     }

@@ -1,4 +1,4 @@
-use egui::{DragValue, FontId, Image, Rgba, RichText, Ui};
+use egui::{Color32, DragValue, FontId, Image, Pos2, Rect, Rgba, RichText, Stroke, Ui, Vec2};
 use nes_backend::{cpu::{CPU_RAM_SIZE, StatusFlag}, rendering::PAL_COLOR};
 
 impl crate::App {
@@ -49,7 +49,7 @@ impl crate::App {
             });
     }
 
-    pub fn cpu_state(&mut self, ctx: &egui::Context) {
+    fn cpu_state(&mut self, ctx: &egui::Context) {
         if !self.app_settings.show.cpu_state { return; }
         
         let nes = self.nes.as_mut().expect("I've already checked if it's Some(_) on the call site.");
@@ -77,7 +77,7 @@ impl crate::App {
             });
     }
 
-    pub fn program_counter_state(&mut self, ctx: &egui::Context) {
+    fn program_counter_state(&mut self, ctx: &egui::Context) {
         if !self.app_settings.show.program_counter { return; }
         
         let nes = self.nes.as_mut().expect("I've already checked if it's Some(_) on the call site.");
@@ -154,7 +154,7 @@ impl crate::App {
         });
     }
 
-    pub fn ram_state(&mut self, ctx: &egui::Context) {
+    fn ram_state(&mut self, ctx: &egui::Context) {
         if !self.app_settings.show.ram { return; }
         
         let nes = self.nes.as_mut().expect("I've already checked if it's Some(_) on the call site.");
@@ -218,6 +218,138 @@ impl crate::App {
                         }
                     });
             });
+    }
+
+    pub fn controller_input(&self, ctx: &egui::Context) {
+        egui::Window::new("controller_debug").show(ctx, |ui| {
+            if let Some(ref nes) = self.nes {
+                ui.label(format!("instant: {:?}", nes.cpu.controlers()));
+                ui.label(format!("snapshot: {:?}", nes.cpu.controlers_state()));
+            }
+            let desired_size = Vec2::new(400.0, 200.0);
+            let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+
+            let painter = ui.painter_at(rect);
+
+            let grey = Color32::from_gray(100);
+            let red = Color32::RED;
+
+            let button_color = |pressed: bool| {
+                if pressed {
+                    red
+                } else {
+                    grey
+                }
+            };
+
+            // =========================
+            // D-Pad
+            // =========================
+
+            let dpad_center = Pos2::new(rect.left() + 70.0, rect.center().y);
+
+            let dpad_size = 24.0;
+            let gap = 2.0;
+
+            // Up
+            painter.rect_filled(
+                Rect::from_center_size(
+                    Pos2::new(dpad_center.x, dpad_center.y - dpad_size - gap),
+                    Vec2::splat(dpad_size),
+                ),
+                2.0,
+                button_color(self.debug_state.controller_state.up),
+            );
+
+            // Down
+            painter.rect_filled(
+                Rect::from_center_size(
+                    Pos2::new(dpad_center.x, dpad_center.y + dpad_size + gap),
+                    Vec2::splat(dpad_size),
+                ),
+                2.0,
+                button_color(self.debug_state.controller_state.down),
+            );
+
+            // Left
+            painter.rect_filled(
+                Rect::from_center_size(
+                    Pos2::new(dpad_center.x - dpad_size - gap, dpad_center.y),
+                    Vec2::splat(dpad_size),
+                ),
+                2.0,
+                button_color(self.debug_state.controller_state.left),
+            );
+
+            // Right
+            painter.rect_filled(
+                Rect::from_center_size(
+                    Pos2::new(dpad_center.x + dpad_size + gap, dpad_center.y),
+                    Vec2::splat(dpad_size),
+                ),
+                2.0,
+                button_color(self.debug_state.controller_state.right),
+            );
+
+            // =========================
+            // Start / Select
+            // =========================
+
+            let middle_y = rect.center().y + 50.0;
+
+            let select_rect = Rect::from_center_size(
+                Pos2::new(rect.center().x - 30.0, middle_y),
+                Vec2::new(40.0, 12.0),
+            );
+
+            let start_rect = Rect::from_center_size(
+                Pos2::new(rect.center().x + 30.0, middle_y),
+                Vec2::new(40.0, 12.0),
+            );
+
+            painter.rect_filled(
+                select_rect,
+                4.0,
+                button_color(self.debug_state.controller_state.select),
+            );
+
+            painter.rect_filled(
+                start_rect,
+                4.0,
+                button_color(self.debug_state.controller_state.start),
+            );
+
+            // =========================
+            // A / B buttons
+            // =========================
+
+            let button_center = Pos2::new(rect.right() - 80.0, rect.center().y);
+
+            painter.circle_filled(
+                Pos2::new(button_center.x - 25.0, button_center.y),
+                18.0,
+                button_color(self.debug_state.controller_state.b),
+            );
+
+            painter.circle_filled(
+                Pos2::new(button_center.x + 25.0, button_center.y),
+                18.0,
+                button_color(self.debug_state.controller_state.a),
+            );
+
+            // Optional outlines
+            painter.circle_stroke(
+                Pos2::new(button_center.x - 25.0, button_center.y),
+                18.0,
+                Stroke::new(1.0, Color32::BLACK),
+            );
+
+            painter.circle_stroke(
+                Pos2::new(button_center.x + 25.0, button_center.y),
+                18.0,
+                Stroke::new(1.0, Color32::BLACK),
+            );
+        });
     }
 }
 

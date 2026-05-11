@@ -7,24 +7,16 @@ use crate::App;
 use egui::{Id, Image, Modal};
 use rfd::FileDialog;
 
-impl eframe::App for App {
-    // Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Use in order for gui to be drawn even without user input.
-        // The game has to be drawn even if the user does nothing.
-        ctx.request_repaint();
-        
+impl App {
+    pub fn main_ui(&mut self, ctx: &egui::Context) {
         self.top_panel(ctx);
 
         if self.nes.is_some() {
-            self.update_emulator();
             self.nes_display(ctx);
             self.debug_windows(ctx);
         }
     }
-}
-
-impl App {
+    
     fn top_panel(&mut self, ctx: &egui::Context) -> egui::InnerResponse<()> {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar

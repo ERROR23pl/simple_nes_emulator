@@ -1,6 +1,8 @@
 mod ui;
 mod utils;
 
+use egui::Key;
+use log::error;
 // crate import
 use nes_backend::{nes::NES, cpu::disassembler::*};
 use utils::display::{Screen, BasicPixelBuffer};
@@ -62,6 +64,74 @@ impl App {
     }
 }
 
+impl eframe::App for App {
+    // Called each time the UI needs repainting, which may be many times per second.
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Use in order for gui to be drawn even without user input.
+        // The game has to be drawn even if the user does nothing.
+        ctx.request_repaint();
+
+        ctx.input(|i| {
+            for event in &i.events {
+                println!("{event:?}");
+            }
+        });
+        
+        if self.nes.is_some() {
+            self.update_emulator();
+        }
+
+        // controller input
+        let mapping = &self.app_settings.controller_mapping;
+        self.debug_state.controller_state = ctx.input(|i| ControllerState {
+            a: i.key_down(mapping.a),
+            b: i.key_down(mapping.b),
+            select: i.key_down(mapping.select),
+            start: i.key_down(mapping.start),
+            up: i.key_down(mapping.up),
+            down: i.key_down(mapping.down),
+            left: i.key_down(mapping.left),
+            right: i.key_down(mapping.right),
+        });
+
+        self.controller_input(ctx);
+
+        // let input_buttons = ctx.input(|i| [
+        //     i.key_down(mapping.a),
+        //     i.key_down(mapping.b),
+        //     i.key_down(mapping.select),
+        //     i.key_down(mapping.start),
+        //     i.key_down(mapping.up),
+        //     i.key_down(mapping.down),
+        //     i.key_down(mapping.left),
+        //     i.key_down(mapping.right),
+        // ]);
+
+        // todo: second controller
+        if let Some(ref mut nes) = self.nes {
+            let input_buttons = [
+                self.debug_state.controller_state.a,
+                self.debug_state.controller_state.b,
+                self.debug_state.controller_state.select,
+                self.debug_state.controller_state.start,
+                self.debug_state.controller_state.up,
+                self.debug_state.controller_state.down,
+                self.debug_state.controller_state.left,
+                self.debug_state.controller_state.right,
+            ];
+
+            let controlers_1 = &mut nes.cpu.controlers[0];
+
+            *controlers_1 = 0x00;
+            for i in input_buttons {
+                *controlers_1 <<= 1;
+                *controlers_1 |= i as u8;
+            }
+        }
+
+        self.main_ui(ctx);        
+    }
+}
 #[derive(Default)]
 pub struct Events {
     file_loading_error_modal: Option<ROMLoadError>,
@@ -70,6 +140,7 @@ pub struct Events {
 #[derive(Default, serde::Serialize)]
 pub struct AppSettings {
     show: ShowSettings,
+    controller_mapping: ControlerMapping,
 }
 
 #[derive(serde::Serialize)]
@@ -93,6 +164,7 @@ pub struct DebugState {
     ram_editing: bool,
     chosen_debug_palette: u8,
     run_speed: Option<i32>,
+    controller_state: ControllerState,
 }
 
 impl Default for DebugState {
@@ -103,7 +175,46 @@ impl Default for DebugState {
             ram_editing: false,
             chosen_debug_palette: 0,
             run_speed: None,
+            controller_state: ControllerState::default(),
         }
     }
 }
 
+#[derive(serde::Serialize)]
+struct ControlerMapping {
+    right: Key,
+    left: Key,
+    down: Key,
+    up: Key,
+    start: Key,
+    select: Key,
+    b: Key,
+    a: Key,
+}
+
+impl Default for ControlerMapping {
+    fn default() -> Self {
+        Self {
+            right: Key::L,
+            left: Key::J,
+            down: Key::K,
+            up: Key::I,
+            start: Key::S,
+            select: Key::A,
+            b: Key::Z,
+            a: Key::X,
+        }
+    }
+}
+
+#[derive(Default, serde::Deserialize, serde::Serialize)]
+pub struct ControllerState {
+    right: bool,
+    left: bool,
+    down: bool,
+    up: bool,
+    start: bool,
+    select: bool,
+    b: bool,
+    a: bool,
+}
