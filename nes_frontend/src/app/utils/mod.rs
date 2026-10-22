@@ -10,36 +10,10 @@ use nes_backend::{cartridge::{self, Cartridge, UnimplementedMapperError}, file_l
 use thiserror::Error;
 
 // std imports
-use std::{collections::VecDeque, io, path::PathBuf};
+use std::{io, path::PathBuf};
 
 
-// third-party imports
-use serde;
 
-
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-pub struct FixedSizeQueue<T, const L: usize>(pub VecDeque<T>);
-
-// There are better ways to implement this, I know.
-impl<T, const L: usize> FixedSizeQueue<T, L> {
-    // returns an element if the queue is in full capacity
-    pub fn push(&mut self, element: T) -> Option<T> {
-        self.0.push_front(element);
-
-        if self.0.len() > L {
-            self.0.pop_back()
-        } else {
-            None
-        }
-    }
-}
-
-impl<T: PartialEq, const L: usize> FixedSizeQueue<T, L> {
-    pub fn push_without_duplicates(&mut self, element: T) -> Option<T> {
-        self.0.retain(|r| *r != element);
-        self.push(element)
-    }
-}
 
 
 impl App {
@@ -91,27 +65,6 @@ impl App {
         }
     }
 
-    pub fn load_rom(&mut self, path: &PathBuf) -> Result<NES<BasicPixelBuffer>, ROMLoadError> {
-        let file = INesFile::try_new_from_path(path)?;
-        let cart = Cartridge::try_from(&file)?;
-
-        // todo: this is not meant to be done here.
-        // todo: remove this and change the parameter to be &self instead of &mut self
-        self.instructions = Some(cart.disassemble());
-
-        let nes = nes_backend::nes::NES::new(BasicPixelBuffer::new(256, 240), BasicPixelBuffer::new(256, 128), cart);
-        Ok(nes)
-    }
+    
 }
 
-#[derive(Debug, Error)]
-pub enum ROMLoadError {
-    #[error(transparent)]
-    IO(#[from] io::Error),
-
-    #[error(transparent)]
-    FileDecoding(#[from] FileDecodingError),
-
-    #[error(transparent)]
-    UnimplementedMapper(#[from] UnimplementedMapperError),
-}

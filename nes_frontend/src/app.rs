@@ -1,12 +1,13 @@
 mod controller;
 mod settings;
+mod ui;
 
-// mod ui;
 // mod utils;
 
 
 // crate import
 use settings::*;
+use ui::*;
 // use nes_backend::{nes::NES, cpu::disassembler::*};
 // use utils::display::{Screen, BasicPixelBuffer};
 
@@ -25,13 +26,13 @@ use log::error;
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct App {
     // stores paths to the last 5 ROMs loaded 
-    // recent_roms: utils::FixedSizeQueue<PathBuf, 5>,
+    recent_roms: FixedSizeQueue<PathBuf, 5>,
 
-    // #[serde(skip)]
-    // nes_screen: Option<Screen>,
+    #[serde(skip)]
+    nes_screen: Screen,
 
-    // #[serde(skip)]
-    // pattern_screen: Option<Screen>,
+    #[serde(skip)]
+    pattern_screen: Screen,
 
     // #[serde(skip)]
     // nes: Option<NES<BasicPixelBuffer>>,
@@ -50,11 +51,11 @@ pub struct App {
 impl App {
     pub fn default_with_context(cc: &eframe::CreationContext<'_>) -> Self {
         Self {
-            // nes_screen: Some(Screen::new(&cc.egui_ctx, "nes screen", 256, 240)),
-            // pattern_screen: Some(Screen::new(&cc.egui_ctx, "pattern screen", 256, 128)),
+            nes_screen: Screen::new(&cc.egui_ctx, "nes screen", 256, 240),
+            pattern_screen: Screen::new(&cc.egui_ctx, "pattern screen", 256, 128),
             // nes: None,
             // instructions: None,
-            // recent_roms: utils::FixedSizeQueue::default(),
+            recent_roms: FixedSizeQueue::default(),
             // events: Events::default(),
             app_settings: AppSettings::default(),
             // debug_state: DebugState::default(),
@@ -128,7 +129,7 @@ impl eframe::App for App {
         //     }
         // }
 
-        // self.main_ui(ctx);        
+        self.ui(ctx);        
     }
 }
 
