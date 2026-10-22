@@ -14,6 +14,7 @@ pub trait BitManipulation {
 }
 
 impl BitManipulation for u8 {
+    #[inline]
     fn nth_bit(&self, bit_index: u8) -> u8 {
         // self & (1 << bit_index) masks off the proper bit
         // >> bit_index shifts the index to the first digit
@@ -21,6 +22,7 @@ impl BitManipulation for u8 {
         (self & (1 << bit_index)) >> bit_index
     }
     
+    #[inline]
     fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self {
         let length = higher_bound - lower_bound + 1;
 
