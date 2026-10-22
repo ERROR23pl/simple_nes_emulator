@@ -1,17 +1,16 @@
-use thiserror::Error;
-
 // crate imports
-use crate::mapper::Mapper;
 use crate::file_loading::{self, *};
-
+use crate::mapper::Mapper;
 use crate::mapper::mapper000::Mapper000;
 
+// third-party imports
+use thiserror::Error;
 
 #[derive(derive_getters::Getters)]
 pub struct Cartridge {
     pub prg_memory: Vec<u8>,
     chr_memory: Vec<u8>,
-    mirroring: Mirroring,
+    mirroring: Mirroring, // this is not always written in Cartridge, but for the sake of simplicity we put it here
     mapper: Box<dyn Mapper>,
 }
 
@@ -72,6 +71,15 @@ impl Cartridge {
     }
 }
 
+impl From<&NametableArrangement> for Mirroring {
+    fn from(value: &NametableArrangement) -> Self {
+        use NametableArrangement as NA;
+        match value {
+            NA::Horizontal => Mirroring::Horizontal,
+            NA::Vertical => Mirroring::Vertical,
+        }
+    }
+}
 
 // * debugging
 impl Cartridge {
@@ -85,6 +93,7 @@ impl Cartridge {
             0x9D, 0x00, 0x03, 0xE8, 0x00,
         ];
         data.extend(vec![0u8; (1 << 14) - data.len()]);
+        
         Cartridge {
             prg_memory: data,
             chr_memory: vec![0; 1 << 13],
@@ -94,12 +103,3 @@ impl Cartridge {
     }
 }
 
-impl From<&NametableArrangement> for Mirroring {
-    fn from(value: &NametableArrangement) -> Self {
-        use NametableArrangement as NA;
-        match value {
-            NA::Horizontal => Mirroring::Horizontal,
-            NA::Vertical => Mirroring::Vertical,
-        }
-    }
-}

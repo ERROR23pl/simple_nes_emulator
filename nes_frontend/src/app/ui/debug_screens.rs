@@ -1,6 +1,8 @@
 use egui::{Color32, DragValue, FontId, Image, Pos2, Rect, Rgba, RichText, Stroke, Ui, Vec2};
 use nes_backend::{cpu::{CPU_RAM_SIZE, StatusFlag}, rendering::PAL_COLOR};
 
+use crate::app::RunningMode;
+
 impl crate::App {
     pub fn debug_windows(&mut self, ctx: &egui::Context) {
         self.pattern_screen(ctx);
@@ -92,14 +94,17 @@ impl crate::App {
 
                 let program_counter = nes.cpu().program_counter() as usize;
 
-                match self.debug_state.run_speed {
-                    Some(ref mut speed) => {
+                match self.debug_state.running_mode {
+                    RunningMode::CyclesPerFrame(ref mut speed) => {
                         ui.add(egui::DragValue::new(speed));
                         if ui.button("pause").clicked() {
-                            self.debug_state.run_speed = None;
+                            self.debug_state.running_mode = RunningMode::StepByStep;
+                        }
+                        if ui.button("normal speed").clicked() {
+                            self.debug_state.running_mode = RunningMode::Normal;
                         }
                     },
-                    None => {
+                    RunningMode::StepByStep => {
                         if ui.button("clock NES").clicked() {
                             nes.clock();
                         }
@@ -114,9 +119,22 @@ impl crate::App {
                         }
                         
                         if ui.button("run emulation").clicked() {
-                            self.debug_state.run_speed = Some(0);
+                            self.debug_state.running_mode = RunningMode::Normal;
+                        }
+
+                        if ui.button("slow down").clicked() {
+                            self.debug_state.running_mode = RunningMode::CyclesPerFrame(0);
                         }
                     }
+                    RunningMode::Normal => {
+                        if ui.button("pause").clicked() {
+                            self.debug_state.running_mode = RunningMode::StepByStep;
+                        }
+
+                        if ui.button("slow down").clicked() {
+                            self.debug_state.running_mode = RunningMode::CyclesPerFrame(0);
+                        }
+                    },
                 }
 
                 let Some(ref instructions) = self.instructions else { return; };

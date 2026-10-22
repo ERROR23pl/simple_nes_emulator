@@ -34,7 +34,8 @@ pub const INSTRUCTION_LOOKUP: [Instruction; 256] = {
     use InstructionType as IT;
     use AddressingMode as AM; 
     [
-        Instruction { type_: IT::BRK,     mode: AM::IMM, cycles: 7},
+        // Instruction { type_: IT::BRK,     mode: AM::IMM, cycles: 7},
+        Instruction { type_: IT::BRK,     mode: AM::IMP, cycles: 7}, // ! change by claude
         Instruction { type_: IT::ORA,     mode: AM::IZX, cycles: 6},
         Instruction { type_: IT::INVALID, mode: AM::IMP, cycles: 2},
         Instruction { type_: IT::INVALID, mode: AM::IMP, cycles: 8},
@@ -340,6 +341,7 @@ macro_rules! compare {
             $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
             $self.set_flag(StatusFlag::Zero, $register == $self.fetched);
             $self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0); // todo: is this correct?
+            // $self.set_flag(StatusFlag::Negative, ((temp & 0x00FF) as u8).nth_bit(7) != 0);
         }
     };
 }
@@ -349,7 +351,9 @@ macro_rules! branch_if {
         {
             if $self.get_flag($flag) == $bool {
                 $self.cycles += 1;
-                $self.addr_abs = (($self.program_counter as i32) + ($self.addr_rel as i32)) as u16;
+                // $self.addr_abs = (($self.program_counter as i32) + ($self.addr_rel as i32)) as u16;
+                // todo: I changed this, but I'm not sure if this is how it's supposed to be.
+                $self.addr_abs = $self.program_counter.wrapping_add($self.addr_rel);
                 
                 if get_high_byte($self.addr_abs) != get_high_byte($self.program_counter) {
                     $self.cycles += 1;
@@ -389,9 +393,9 @@ impl<P: PixelBuffer> CPU<P> {
             
             // ---------- TRANSFER ----------
             IT::TAX => { transfer!(self, acc,   reg_x) },
-            IT::TXA => { transfer!(self, reg_x, acc) },
+            IT::TXA => { transfer!(self, reg_x, acc  ) },
             IT::TAY => { transfer!(self, acc,   reg_y) },
-            IT::TYA => { transfer!(self, reg_y, acc) }, 
+            IT::TYA => { transfer!(self, reg_y, acc  ) }, 
 
             // ---------- ARITHMETIC ----------
 
@@ -409,7 +413,10 @@ impl<P: PixelBuffer> CPU<P> {
                 self.set_flag(
                     StatusFlag::Overflow,
                     // todo: explain this shit
-                    (!((self.acc as u16) ^ (self.fetched) as u16) & ((self.acc as u16) ^ temp)) & 0x0080 != 0
+                    (
+                        !((self.acc as u16) ^ (self.fetched) as u16) &
+                        ((self.acc as u16) ^ temp)
+                    ) & 0x0080 != 0
                 );
                 
                 self.set_flag(StatusFlag::Negative, temp & 0x80 != 0);
@@ -445,13 +452,13 @@ impl<P: PixelBuffer> CPU<P> {
                 self.write(self.addr_abs, temp);
 
                 self.set_flag(StatusFlag::Zero, temp == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp & 0x80 != 0);
+                self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0);
                 
                 false
             },
             
-            IT::INX => { self.reg_x.wrapping_add_mut(1); incr_flags!(self, self.reg_x) },
-            IT::INY => { self.reg_y.wrapping_add_mut(1); incr_flags!(self, self.reg_y) },
+            IT::INX => { self.reg_x += 1; incr_flags!(self, self.reg_x) },
+            IT::INY => { self.reg_y += 1; incr_flags!(self, self.reg_y) },
             
             IT::DEC => {
                 self.fetch_data();
@@ -465,8 +472,8 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
             
-            IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
-            IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
+            IT::DEX => { self.reg_x -= 1; incr_flags!(self, self.reg_x) },
+            IT::DEY => { self.reg_y -= 1; incr_flags!(self, self.reg_y) },
             
             // ---------- SHIFT ----------
             IT::ASL => {
@@ -476,7 +483,7 @@ impl<P: PixelBuffer> CPU<P> {
 
                 self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(7) != 0);
                 self.set_flag(StatusFlag::Zero, new_value == 0x00);
-                self.set_flag(StatusFlag::Negative, new_value & 0x80 != 0);
+                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
                 
                 if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
                     self.acc = new_value;
@@ -553,7 +560,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::AND => {
                 self.fetch_data();
                 self.acc = self.acc & self.fetched;
-                self.set_flag(StatusFlag::Carry, self.acc == 0);
+                self.set_flag(StatusFlag::Zero, self.acc == 0x00);
                 self.set_flag(StatusFlag::Negative, self.acc & 0x80 != 0);
                 
                 true
@@ -630,7 +637,10 @@ impl<P: PixelBuffer> CPU<P> {
             // return from subroutine
             IT::RTS => {
                 // the order of variables is important
-                let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
+                // let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
+                let pc_low = self.pop_from_stack();
+                let pc_high = self.pop_from_stack();
+
                 self.program_counter = glue_u8s(pc_high, pc_low);
                 
                 self.program_counter += 1;
@@ -641,7 +651,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::BRK => {
                 self.program_counter += 1;
 	
-                self.set_flag(StatusFlag::DisableInterupts, true);
+                // self.set_flag(StatusFlag::DisableInterupts, true);
                 
                 let (pc_high, pc_low) = split_u16(self.program_counter);
                 self.push_to_stack(pc_high);
@@ -651,23 +661,39 @@ impl<P: PixelBuffer> CPU<P> {
                 self.push_to_stack(self.status);
                 self.set_flag(StatusFlag::Break, false);
 
-                self.program_counter = self.read(0xFFFE, false) as u16 | ((self.read(0xFFFF, false) as u16) << 8);
+                self.set_flag(StatusFlag::DisableInterupts, true); // ! claude change
+                
+                const INTERUPT_HANDLER_ADDRESS: u16 = 0xFFFE;
+                // self.program_counter = self.read(0xFFFE, false) as u16 | ((self.read(0xFFFF, false) as u16) << 8);
+                self.program_counter = glue_u8s(
+                    self.read(INTERUPT_HANDLER_ADDRESS + 1, false),
+                    self.read(INTERUPT_HANDLER_ADDRESS + 0, false)
+                );
                 
                 false
             },
             
             // ReTurn from Interupt
             IT::RTI => {
-                self.status = self.pop_from_stack();
-                
-                self.set_flag(StatusFlag::Break, false);  // used to be: self.status &= !(StatusFlag::Break as u8);
-                self.set_flag(StatusFlag::Unused, false); // used to be: self.status &= !(StatusFlag::Unused as u8);
-                
+                self.status = (self.pop_from_stack() & !(StatusFlag::Break as u8)) | (StatusFlag::Unused as u8);
                 let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
-                self.program_counter = glue_u8s(pc_high, pc_low);               
-                
+                self.program_counter = glue_u8s(pc_high, pc_low);
                 false
-            },
+            }, // ! claude
+            // IT::RTI => {
+            //     self.status = self.pop_from_stack();
+                
+            //     // todo: what do these do actually?
+            //     // self.set_flag(StatusFlag::Break, false); 
+            //     self.status &= !(StatusFlag::Break as u8);
+            //     // self.set_flag(StatusFlag::Unused, false); 
+            //     self.status &= !(StatusFlag::Unused as u8);
+                
+            //     let (pc_low, pc_high) = (self.pop_from_stack(), self.pop_from_stack());
+            //     self.program_counter = glue_u8s(pc_high, pc_low);               
+                
+            //     false
+            // },
 
 
             // ---------- STACK ----------
@@ -689,23 +715,32 @@ impl<P: PixelBuffer> CPU<P> {
 
             // Push processor status
             IT::PHP => {
-                self.push_to_stack(
-                    self.status | (StatusFlag::Break as u8) | (StatusFlag::Unused as u8)
-                );
-                
-                self.set_flag(StatusFlag::Break, false);
-                self.set_flag(StatusFlag::Unused, false);
-                
+                self.push_to_stack(self.status | (StatusFlag::Break as u8) | (StatusFlag::Unused as u8));
                 false
-            },
+            }, // ! claude
+            // IT::PHP => {
+            //     self.push_to_stack(
+            //         self.status | (StatusFlag::Break as u8) | (StatusFlag::Unused as u8)
+            //     );
+                
+            //     self.set_flag(StatusFlag::Break, false);
+            //     self.set_flag(StatusFlag::Unused, false);
+                
+            //     false
+            // },
+
             
             IT::PLP => {
-                self.status = self.pop_from_stack();
-                
-                self.set_flag(StatusFlag::Unused, true);
-
+                self.status = (self.pop_from_stack() & !(StatusFlag::Break as u8)) | (StatusFlag::Unused as u8);
                 false
-            },
+            }, // ! claude
+            // IT::PLP => {
+            //     self.status = self.pop_from_stack();
+                
+            //     self.set_flag(StatusFlag::Unused, true);
+
+            //     false
+            // },
 
             IT::TSX => { transfer!(self, stack_pointer, reg_x) },
             
@@ -720,6 +755,7 @@ impl<P: PixelBuffer> CPU<P> {
             IT::CLD => { self.set_flag(StatusFlag::DecimalMode,      false); false },
             IT::CLI => { self.set_flag(StatusFlag::DisableInterupts, false); false },
             IT::CLV => { self.set_flag(StatusFlag::Overflow,         false); false },
+
             IT::SEC => { self.set_flag(StatusFlag::Carry,            true); false },
             IT::SED => { self.set_flag(StatusFlag::DecimalMode,      true); false },
             IT::SEI => { self.set_flag(StatusFlag::DisableInterupts, true); false },

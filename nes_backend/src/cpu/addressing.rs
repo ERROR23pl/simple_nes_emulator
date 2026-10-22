@@ -40,7 +40,7 @@ impl<P: PixelBuffer> CPU<P> {
             AM::ZP0 => {
                 self.addr_abs = self.read(self.program_counter, false) as u16;	
                 self.program_counter += 1;
-                // self.addr_abs &= 0x00FF; // ? I'm fairly certain we don't need to do that here.
+                self.addr_abs &= 0x00FF; // ? I'm fairly certain we don't need to do that here.
                 
                 false
             },
@@ -76,7 +76,7 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             AM::ABS => {
-                let low_byte = self.read(self.program_counter, false);
+                let low_byte = self.read(self.program_counter + 0, false);
                 let high_byte = self.read(self.program_counter + 1, false);
                 self.program_counter += 2;
 
@@ -86,14 +86,12 @@ impl<P: PixelBuffer> CPU<P> {
             },
 
             AM::ABX => {
-                let low_byte = self.read(self.program_counter, false);
+                let low_byte = self.read(self.program_counter + 0, false);
                 let high_byte = self.read(self.program_counter + 1, false);
                 self.program_counter += 2;
 
-                self.addr_abs = glue_u8s(high_byte, low_byte) + self.reg_x as u16;
+                self.addr_abs = glue_u8s(high_byte, low_byte).wrapping_add(self.reg_x as u16);
 
-                // 0xFF00 grabs the high byte after adding x and compares it to the high_byte from input
-                // let page_has_been_changed = self.addr_abs & 0xFF00 != (high_byte << 8);
                 let page_has_been_changed = get_high_byte(self.addr_abs) != high_byte;
                 
                 page_has_been_changed
@@ -104,17 +102,16 @@ impl<P: PixelBuffer> CPU<P> {
                 let high_byte = self.read(self.program_counter + 1, false);
                 self.program_counter += 2;
                 
-                self.addr_abs = glue_u8s(high_byte, low_byte) + self.reg_y as u16;
+                self.addr_abs = glue_u8s(high_byte, low_byte).wrapping_add(self.reg_y as u16);
                 
-                // 0xFF00 grabs the high byte after adding x and compares it to the high_byte from input
-                // let page_has_been_changed = self.addr_abs & 0xFF00 != (high_byte << 8);
                 let page_has_been_changed = get_high_byte(self.addr_abs) != high_byte;
 
                 page_has_been_changed
             },
 
+            // this one is used only used with the JMP instruction
             AM::IND => {
-                let pointer_low_byte = self.read(self.program_counter, false);
+                let pointer_low_byte = self.read(self.program_counter + 0, false);
                 let pointer_high_byte = self.read(self.program_counter + 1, false);
                 self.program_counter += 2;
 
@@ -124,13 +121,16 @@ impl<P: PixelBuffer> CPU<P> {
                 
                 // ! The following is a bug in the NES hardware. If the low byte of the pointer
                 // ! happens to be 0xFF then it points to the end of the page.
-                // ! In this case to get the high byte of the address we have to cross the page boundry
-                // ! and add 1 to the pointer. This should change the high byte of the pointer, but
-                // ! because of the bug, it actually doesn't.
+                // ! In this case to get the high byte of the address we have to add 1 to the pointer
+                // ! and subsequently, cross the page boundry. This should change the high byte of the pointer,
+                // ! but because of the bug, it actually doesn't.
                 // ! We have to emulate this behavior since developers knew about it
                 // ! and every game expects this bug to be present
-                let address_high_byte = if pointer_low_byte == 0x00FF {
-                    self.read(pointer & 0xFF00, false) // mask pointer with 0xFF00 to simulate +1 not affecting the high_byte
+                let address_high_byte = if pointer_low_byte == 0xFF {
+                    // the +1 only affects the lower byte which becomes 0x00.
+                    // the high byte stays the same. To get this result,
+                    // mask pointer with 0xFF00
+                    self.read(pointer & 0xFF00, false) 
                 } else {
                     self.read(pointer + 1, false)
                 };
@@ -140,31 +140,37 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
 
-            // there's a pointer to the propper adress on the zero page in a location sepcified as an argument
+            // In this mode, the programmer supplies an 8-bit address
+            // to a pointer. Since it's 8-bit, not 16-bit, it lives on page zero.
+            // Then `reg_x` is actually used to offset that pointer.
             AM::IZX => {
-                let address_at_page_zero = self.read(self.program_counter, false) as u16;
+                let pointer_address = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte  = self.read((address_at_page_zero + self.reg_x as u16 + 0) & 0x00FF, false);
-                let high_byte = self.read((address_at_page_zero + self.reg_x as u16 + 1) & 0x00FF, false);
+                let low_byte  = self.read((pointer_address + self.reg_x as u16 + 0) & 0x00FF, false);
+                let high_byte = self.read((pointer_address + self.reg_x as u16 + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte);
                 
                 false
             },
 
-            // notice that this works a bit differently than IZX
+            // In this mode, the programmer supplies an 8-bit address
+            // to a pointer. Since it's 8-bit, not 16-bit, it lives on page zero.
+            // * notice that this works a bit differently than IZX
+            // This time `reg_y` is used as an offset to the memory the pointer points to.
             AM::IZY => {
-                let address_at_page_zero = self.read(self.program_counter, false) as u16;
+                let pointer_address = self.read(self.program_counter, false) as u16;
                 self.program_counter += 1;
 
-                let low_byte  = self.read((address_at_page_zero + 0) & 0x00FF, false);
-                let high_byte = self.read((address_at_page_zero + 1) & 0x00FF, false);
+                let low_byte  = self.read((pointer_address + 0) & 0x00FF, false);
+                let high_byte = self.read((pointer_address + 1) & 0x00FF, false);
 
                 self.addr_abs = glue_u8s(high_byte, low_byte) + self.reg_y as u16;
 
-                // if we cross the page boundry we need another clock cycle    
-                get_high_byte(self.addr_abs) != high_byte
+                let page_boundry_crossed = get_high_byte(self.addr_abs) != high_byte;
+
+                page_boundry_crossed
             },
         }
     }

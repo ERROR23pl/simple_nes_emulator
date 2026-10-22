@@ -12,6 +12,7 @@ pub struct DisassembledInstruction {
     mode: AddressingMode,
     argument: Argument,
 }
+
 pub enum Argument {
     None,
     Small(u8),
@@ -45,6 +46,7 @@ impl Display for DisassembledInstruction {
 
 impl Cartridge {
     pub fn disassemble(&self) -> Vec<DisassembledInstruction> {
+        // const CPU_ADDRESS_SPACE_OFFSET = 0x8000
         let bytes = self.prg_memory();
         let mut result = Vec::new();
         

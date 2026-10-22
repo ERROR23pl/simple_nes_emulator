@@ -7,6 +7,7 @@ use crate::ppu::ppu_controls::PPUControlRegisters;
 use crate::rendering::{NesColor, PAL_COLOR, PatternTable, PixelBuffer};
 
 use itertools::iproduct;
+use log::error;
 
 pub struct PPU<P: PixelBuffer> {
     
@@ -89,7 +90,10 @@ impl<P: PixelBuffer> PPU<P> {
                 },
             },
 
-            0x3000..0x3F00 => { panic!("unused.") },
+            0x3000..0x3F00 => {
+                error!("memory 0x3000..0x3F00 on PPU bus is unused, but a read on {:04X} was attempted. Dummy 0 returned.", address);
+                0
+            },
             
             // pallette memory
             0x3F00..0x4000 => {
@@ -141,7 +145,9 @@ impl<P: PixelBuffer> PPU<P> {
                 },
             },
 
-            0x3000..0x3F00 => { panic!("unused.") },
+            0x3000..0x3F00 => {
+                error!("memory 0x3000..0x3F00 on PPU bus is unused, write of value {:02X} in address {:04X} was attempted.", data, address);
+            },
 
             // pallette memory
             0x3F00..0x4000 => {

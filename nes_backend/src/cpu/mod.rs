@@ -51,7 +51,6 @@ pub struct CPU<P: PixelBuffer> {
     // helper variables
     fetched: u8,
     addr_abs: u16,
-    // addr_rel: i8, // used to be `addr_rel: u16`
     addr_rel: u16,
     opcode: u8,
     cycles: u8,
@@ -120,16 +119,20 @@ impl<P: PixelBuffer> CPU<P> {
     // thus `read_only` flag is passed for debugging purposes
     // if one would want to read from them without modifying the state
     pub fn read(&mut self, address: u16, read_only: bool) -> u8 {
+        // source: https://www.nesdev.org/wiki/CPU_memory_map
         match address {
             0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
             0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
-            0x4020..=0xFFFF => self.cartridge.cpu_read(address), // todo: is this correct?
             0x4016 | 0x4017 => {
                 let most_significant_bit = (self.controlers_state[(address & 0x0001) as usize] & 0x80) << 7;
                 self.controlers_state[(address & 0x0001) as usize] <<= 1;
 
                 most_significant_bit
             }
+            
+            // 0x
+            0x4020..=0xFFFF => self.cartridge.cpu_read(address),
+
             _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
         }
     }
@@ -263,10 +266,10 @@ impl<P: PixelBuffer> CPU<P> {
     
     // returns `true` if the execution needs another cycle
     fn find_data_and_execute(&mut self, instruction: Instruction) -> bool {
-        let data_needs_cycle = self.find_data(*instruction.mode());
+        let page_boundry_crossed = self.find_data(*instruction.mode());
         let operation_needs_cycle = self.execute(instruction);
         
-        data_needs_cycle && operation_needs_cycle
+        page_boundry_crossed && operation_needs_cycle
     }
 
     pub fn reset(&mut self) {

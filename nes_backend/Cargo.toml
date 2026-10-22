@@ -17,3 +17,7 @@ thiserror = "2.0.18"
 # pixels = "0.15.0"
 # winit = "0.30.12"
 # winit_input_helper = "0.17"
+
+[profile.dev]
+opt-level = 2
+overflow-checks = false

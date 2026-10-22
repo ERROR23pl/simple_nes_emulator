@@ -1,6 +1,6 @@
 use modular_bitfield::prelude::*;
 
-// todo: I'm not sure about all thatk
+// todo: I'm not sure about all that
 #[derive(Default)]
 pub struct PPUControlRegisters {
     // actual registers
@@ -35,8 +35,8 @@ pub enum WritingAddressPart {
 #[derive(Default, Clone, Copy)]
 pub struct PPUStatus {
     #[skip] __: B5,
-    sprite_overflow: bool,
-    sprite_zero_hit: bool,
+    pub sprite_overflow: bool,
+    pub sprite_zero_hit: bool,
     pub vertical_blank: bool,
 }
 
@@ -68,7 +68,6 @@ pub struct PPUControl {
     pub enable_nmi: bool,
 }
 
-// todo: this does not add up to 16!!!!!!!!!!!
 #[bitfield]
 #[repr(u16)]
 #[derive(Default, Clone, Copy)]

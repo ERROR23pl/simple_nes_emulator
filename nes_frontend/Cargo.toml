@@ -43,7 +43,9 @@ web-sys = "0.3.70"              # to access the DOM (to hide the loading text)
 # Optimize all dependencies even in debug builds:
 # [profile.dev.package."*"]
 # opt-level = 2
-
+[profile.dev]
+opt-level = 2
+overflow-checks = false
 
 # [patch.crates-io]
 

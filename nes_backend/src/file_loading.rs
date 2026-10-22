@@ -56,16 +56,6 @@ pub struct INesFileHeader {
 
 type Trainer = [u8; 512];
 
-impl Display for INesFile {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.header, f)?;
-        writeln!(f, "Trainer: {}", self.header.trainer_present)?;
-        writeln!(f, "PRG ROM: {} bytes, {} KB", self.prg_rom_data.len(), self.prg_rom_data.len() / 1024)?;
-        writeln!(f, "CHR ROM: {} bytes, {} KB", self.chr_rom_data.len(), self.chr_rom_data.len() / 1024)?;
-        Ok(())
-    }
-}
-
 #[derive(Debug, Specifier)]
 #[bits = 1]
 pub enum NametableArrangement {
@@ -73,13 +63,13 @@ pub enum NametableArrangement {
     Horizontal = 1,
 }
 
+
 impl INesFile {
-    pub fn new_from_file_path(location: impl AsRef<Path>) -> Result<INesFile, FileDecodingError> {
+    pub fn try_new_from_path(location: impl AsRef<Path>) -> Result<INesFile, FileDecodingError> {
         let mut file = File::open(location)?;
 
         let header = INesFileHeader::new_from_file(&mut file)?;
 
-        // Possible 512 bits for trainer data
         let trainer = if header.trainer_present {
             let mut trainer_data = [0u8; 512];
             file.read_exact(&mut trainer_data)?;
@@ -89,7 +79,8 @@ impl INesFile {
         }; 
 
         // PRG ROM (program ROM)
-        let mut prg_rom_data = vec![0u8; header.prg_rom_size as usize * PRG_BANK_SIZE]; // we *could* ommit initialization, but I'm not going to cause it's not a bottle neck. 
+        // we *could* ommit initialization, but I'm not going to cause it's not a bottle neck.
+        let mut prg_rom_data = vec![0u8; header.prg_rom_size as usize * PRG_BANK_SIZE];  
         file.read_exact(&mut prg_rom_data)?;
 
         // CHR ROM (character ROM)
@@ -105,7 +96,7 @@ impl INesFile {
             None
         };
 
-        // this should be empty but I'm leaving it for debbugging purposes
+        // this *should* be empty but I'm leaving it for debbugging purposes
         let mut rest = Vec::new();
         file.read_to_end(&mut rest)?;
 
@@ -115,7 +106,7 @@ impl INesFile {
             prg_rom_data,
             chr_rom_data,
             playchoice_inst_rom: playchoice,
-            playchoice_prom: None,
+            playchoice_prom: None, // todo: what is this?
         })
     }
 }
@@ -140,7 +131,7 @@ impl INesFile {
 
 #[derive(Debug, Error)]
 pub enum FileDecodingError {
-    #[error("The first 4 bytes of the file don't match the standard 4-byte header. Expected `NES0x1A`, but found `{0:?}` ")]
+    #[error("The first 4 bytes of the file don't match the standard 4-byte header. Expected `[N, E, S, 0x1A]`, but found `{0:?}` ")]
     ImproperHEaderError([u8; 4]),
 
     #[error("IO error")]
@@ -149,9 +140,11 @@ pub enum FileDecodingError {
 
 impl INesFileHeader {
     pub fn new_from_file(file: &mut File) -> Result<INesFileHeader, FileDecodingError> {
+        // the header lives in the first 16 bytes of the file
         let mut header_buffer = [0u8; 16];
         file.read(&mut header_buffer)?;
 
+        // it should follow this specific layout
         let nes_ascii = &header_buffer[0..4];
         
         let prg_rom_size = &header_buffer[4];
@@ -162,8 +155,10 @@ impl INesFileHeader {
         let flags8 = &header_buffer[8];
         let flags9 = &header_buffer[9];
         let flags10 = &header_buffer[10];
-        let padding = &header_buffer[11..16];
+        
+        let padding: [u8; 5] = (&header_buffer[11..16]).try_into().expect("This slice is obviously 5 elements long.");
 
+        // ---------- splitting and validation ----------
         const STANDARD_INES_HEADER: [u8; 4] = [b'N', b'E', b'S', 0x1A];
         if nes_ascii != STANDARD_INES_HEADER {
             return Err(FileDecodingError::ImproperHEaderError([nes_ascii[0], nes_ascii[1], nes_ascii[2], nes_ascii[3]]));
@@ -188,8 +183,8 @@ impl INesFileHeader {
         let mapper_number = mapper_upper_nibble | mapper_lower_nibble;
 
         Ok(INesFileHeader {
-            prg_rom_size: prg_rom_size.clone(),
-            chr_rom_size: chr_rom_size.clone(),
+            prg_rom_size: *prg_rom_size,
+            chr_rom_size: *chr_rom_size,
 
             // flags 6
             nametable_arrangement,
@@ -213,7 +208,7 @@ impl INesFileHeader {
             flags10: flags10.clone(),
             
             // unused padding, but some dumpers populate it. Just for completenes I include it.
-            padding: [padding[0], padding[1], padding[2], padding[3], padding[4]],
+            padding,
         })
     }
 }

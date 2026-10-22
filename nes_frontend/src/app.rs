@@ -71,11 +71,11 @@ impl eframe::App for App {
         // The game has to be drawn even if the user does nothing.
         ctx.request_repaint();
 
-        ctx.input(|i| {
-            for event in &i.events {
-                println!("{event:?}");
-            }
-        });
+        // ctx.input(|i| {
+        //     for event in &i.events {
+        //         println!("{event:?}");
+        //     }
+        // });
         
         if self.nes.is_some() {
             self.update_emulator();
@@ -163,7 +163,7 @@ pub struct DebugState {
     ram_page_number: usize,
     ram_editing: bool,
     chosen_debug_palette: u8,
-    run_speed: Option<i32>,
+    running_mode: RunningMode,
     controller_state: ControllerState,
 }
 
@@ -174,10 +174,18 @@ impl Default for DebugState {
             ram_page_number: 0,
             ram_editing: false,
             chosen_debug_palette: 0,
-            run_speed: None,
+            running_mode: RunningMode::Normal,
             controller_state: ControllerState::default(),
         }
     }
+}
+
+#[derive(Default, serde::Serialize)]
+pub enum RunningMode {
+    #[default]
+    Normal,
+    StepByStep,
+    CyclesPerFrame(u64),
 }
 
 #[derive(serde::Serialize)]
