@@ -108,8 +108,9 @@ impl<P: PixelBuffer> CPU<P> {
             0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
             0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
             0x4016 | 0x4017 => {
-                self.controlers_state[(address & 0x0001) as usize] = self.controlers[(address & 0x0001) as usize]
-            }
+                let which_controler = (address & 0x0001) as usize;
+                self.controlers_state[which_controler] = self.controlers[which_controler]
+            },
             0x4020..=0xFFFF => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
             _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
         }
@@ -124,8 +125,10 @@ impl<P: PixelBuffer> CPU<P> {
             0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
             0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
             0x4016 | 0x4017 => {
-                let most_significant_bit = (self.controlers_state[(address & 0x0001) as usize] & 0x80) << 7;
-                self.controlers_state[(address & 0x0001) as usize] <<= 1;
+                let which_controler = (address & 0x0001) as usize;
+                let most_significant_bit = (self.controlers_state[which_controler] & 0x80) >> 7;
+
+                self.controlers_state[which_controler] <<= 1;
 
                 most_significant_bit
             }

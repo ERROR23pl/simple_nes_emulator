@@ -7,55 +7,49 @@ use crate::{
 
 impl<P: PixelBuffer> PPU<P> {
     pub fn clock(&mut self, cartridge: &mut Cartridge) {
+        const CYCLE_NUMBER: u16 = 341;
+        const SCANLINE_NUMBER: i16 = 261;
 
-        // All but 1 of the secanlines is visible to the user. The pre-render self.scanline
-        // at -1, is used to configure the "shifters" for the first visible self.scanline, 0.
-        if self.scanline >= -1 && self.scanline < 240 {		
-            // Background Rendering ======================================================
-
-            if self.scanline == 0 && self.cycle == 0 {
-                // "Odd Frame" self.cycle skip
-                self.cycle = 1;
-            }
-
-            if self.scanline == -1 && self.cycle == 1 {
-                // Effectively start of new frame, so clear vertical blank flag
+        // As we progress through scanlines and cycles, the PPU is effectively
+        // a state machine going through the motions of fetching background 
+        // information and sprite information, compositing them into a pixel
+        // to be output.
+        
+        // "Odd Frame" cycle skip
+        if self.scanline == 0 && self.cycle == 0 {
+            self.cycle = 1;
+        }
+        
+        match (self.scanline, self.cycle) {
+            // Effectively start of new frame, so clear vertical blank flag
+            (-1, 1) => { 
                 self.ppu_controls.status.set_vertical_blank(false);
+            },
 
-                // Clear sprite overflow flag
-                self.ppu_controls.status.set_sprite_overflow(false);
-                
-                // Clear the sprite zero hit flag
-                self.ppu_controls.status.set_sprite_zero_hit(false);
-
-                // Clear Shifters
-                // for i in 0..8 {
-                //     sprite_shifter_pattern_lo[i] = 0;
-                //     sprite_shifter_pattern_hi[i] = 0;
-                // }
-            }
-
-
-            if (self.cycle >= 2 && self.cycle < 258) || (self.cycle >= 321 && self.cycle < 338) {
+            (-1..240, 2..258 | 321..338) => {
                 self.update_shifters();
                 
-                
-                // In these self.cycles we are collecting and working with visible data
+                // In these cycles we are collecting and working with visible data
                 // The "shifters" have been preloaded by the end of the previous
-                // self.scanline with the data for the start of this self.scanline. Once we
+                // scanline with the data for the start of this scanline. Once we
                 // leave the visible region, we go dormant until the shifters are
-                // preloaded for the next self.scanline.
+                // preloaded for the next scanline.
 
                 // Fortunately, for background rendering, we go through a fairly
-                // repeatable sequence of events, every 2 clock self.cycles.
+                // repeatable sequence of events, every 2 clock cycles.
+                const NAMETABLE_MEMORY_OFFSET: u16 = 0x2000;
                 match (self.cycle - 1) % 8 {
-                	0 => {
+                    0 => {
                         // Load the current background tile pattern and attributes into the "shifter"
                         self.load_background_shifters();
+
                         // Fetch the next background tile ID
-                        // "(u16::from(self.ppu_controls.vram_address) & 0x0FFF)" : Mask to 12 bits that are relevant
+                        // "(vram_addr.reg & 0x0FFF)" : Mask to 12 bits that are relevant
                         // "| 0x2000"                 : Offset into nametable space on PPU address bus
-                        self.bg_next_tile_id = self.read(0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF), cartridge);
+                        self.bg_next_tile_id = self.read(
+                            0x2000 + (u16::from(self.ppu_controls.vram_address) & 0x0FFF),
+                            cartridge
+                        );
 
                         // Explanation:
                         // The bottom 12 bits of the loopy register provide an index into
@@ -79,10 +73,10 @@ impl<P: PixelBuffer> PPU<P> {
                         //   +----------------+----------------+
                         //
                         // This means there are 4096 potential locations in this array, which 
-                        // just so happens to be 2^12!
+                        // just so happens to be 2^12
                     },
 
-                	2 => {
+                    2 => {
                         // Fetch the next background tile attribute. OK, so this one is a bit
                         // more involved :P
 
@@ -117,17 +111,23 @@ impl<P: PixelBuffer> PPU<P> {
                         // "((vram_addr.coarse_y >> 2) << 3)" : integer divide coarse y by 4, 
                         //                                      from 5 bits to 3 bits,
                         //                                      shift to make room for coarse x
+                        const ATTRIBUTE_MEMORY_OFFSET: u16 = 32 * 30;
+                        let (_, nametable_y, nametable_x, coarse_y, coarse_x) = &self.ppu_controls.vram_address.dissolve_u16();
+                        
+                        self.bg_next_tile_attrib = self.read(
+                            NAMETABLE_MEMORY_OFFSET +
+                            ATTRIBUTE_MEMORY_OFFSET + (
+                                (nametable_y << 11) | (nametable_x << 10) | ((coarse_y >> 2) << 3) | (coarse_x >> 2)
+                            ),
+                            cartridge
+                        );
 
                         // Result so far: YX00 00yy yxxx
 
                         // All attribute memory begins at 0x03C0 within a nametable, so OR with
                         // result to select target nametable, and attribute byte offset. Finally
-                        // OR with 0x2000 to offset into nametable address space on PPU bus.				
-                        self.bg_next_tile_attrib = self.read(0x23C0 | ((self.ppu_controls.vram_address.nametable_y() as u16) << 11) 
-                                                            | ((self.ppu_controls.vram_address.nametable_x() as u16) << 10) 
-                                                            | ((self.ppu_controls.vram_address.coarse_y() as u16 >> 2) << 3) 
-                                                            | (self.ppu_controls.vram_address.coarse_x() as u16 >> 2), cartridge);
-                        
+                        // OR with 0x2000 to offset into nametable address space on PPU bus.
+
                         // Right we've read the correct attribute byte for a specified address,
                         // but the byte itself is broken down further into the 2x2 tile groups
                         // in the 4x4 attribute zone.
@@ -146,16 +146,31 @@ impl<P: PixelBuffer> PPU<P> {
                         // actually interested in which specifies the palette for the 2x2 group of
                         // tiles. We know if "coarse y % 4" < 2 we are in the top half else bottom half.
                         // Likewise if "coarse x % 4" < 2 we are in the left half else right half.
-                        // Ultimately we want the bottom two bits of our attribute word to be the
-                        // palette selected. So shift as required...				
-                        if self.ppu_controls.vram_address.coarse_y() as u8 & 0x02 != 0 { self.bg_next_tile_attrib >>= 4; }
-                        if self.ppu_controls.vram_address.coarse_x() as u8 & 0x02 != 0 { self.bg_next_tile_attrib >>= 2; }
+                        let top = coarse_y % 4 < 2;
+                        let left = coarse_x % 4 < 2;
+
+                        self.bg_next_tile_attrib >>= match (top, left) {
+                            // TL, top-left
+                            (true, true) => 0,
+                            // TR, top-right
+                            (true, false) => 2,
+                            // BL, bottom-left
+                            (false, true) => 4,
+                            // BR, bottom-right
+                            (false, false) => 6,
+                        };
+
+                        // only interested in last 2 bits                        
                         self.bg_next_tile_attrib &= 0x03;
+                        
+                        // Ultimately we want the bottom two bits of our attribute word to be the
+                        // palette selected. So shift as required...
+                        // if (coarse_y & 0x02) != 0 { self.bg_next_tile_attrib >>= 4 };
+                        // if (coarse_x & 0x02) != 0 { self.bg_next_tile_attrib >>= 2 };
+                        // self.bg_next_tile_attrib &= 0x03;
                     },
 
-                    // Compared to the last two, the next two are the easy ones... :P
-
-                	4 => { 
+                    4 => {
                         // Fetch the next background tile LSB bit plane from the pattern memory
                         // The Tile ID has been read from the nametable. We will use this id to 
                         // index into the pattern memory to find the correct sprite (assuming
@@ -176,60 +191,66 @@ impl<P: PixelBuffer> PPU<P> {
                         //                                         vertical scroll offset
                         // "+ 0"                                 : Mental clarity for plane offset
                         // Note: No PPU address bus offset required as it starts at 0x0000
-                        self.bg_next_tile_lsb = self.read(((self.ppu_controls.control.pattern_background() as u16) << 12) 
-                                                + ((self.bg_next_tile_id as u16) << 4) 
-                                                + (self.ppu_controls.vram_address.fine_y() as u16) + 0, cartridge);
-
+                        self.bg_next_tile_lsb = self.read(
+                            ((self.ppu_controls.control.pattern_background() as u16) << 12) +
+                            ((self.bg_next_tile_id as u16) << 4) +
+                            (self.ppu_controls.vram_address.fine_y() as u16),
+                            cartridge
+                        );
                     },
-
-                	6 => {
+                    
+                    6 => {
                         // Fetch the next background tile MSB bit plane from the pattern memory
                         // This is the same as above, but has a +8 offset to select the next bit plane
-                        self.bg_next_tile_msb = self.read(((self.ppu_controls.control.pattern_background() as u16) << 12)
-                                                + ((self.bg_next_tile_id as u16) << 4)
-                                                + (self.ppu_controls.vram_address.fine_y() as u16) + 8, cartridge);
+                        self.bg_next_tile_msb = self.read(
+                            ((self.ppu_controls.control.pattern_background() as u16) << 12) +
+                            ((self.bg_next_tile_id as u16) << 4) +
+                            (self.ppu_controls.vram_address.fine_y() as u16) + 8,
+                            cartridge
+                        );
                     },
 
-                	7 => {
+                    7 => {
                         // Increment the background tile "pointer" to the next tile horizontally
                         // in the nametable memory. Note this may cross nametable boundaries which
                         // is a little complex, but essential to implement scrolling
                         self.ppu_controls.increment_scroll_x();
                     },
 
-                    // todo: change this to make it more explicit
-                    _ => { },
+                    1 | 3 | 5 => { /* on these frames we do nothing */ },
+
+                    8.. => unreachable!("Any number modulo 8 can't be bigger than 8"),
                 }
-            }
 
-            // End of a visible self.scanline, so increment downwards...
-            if self.cycle == 256 {
-                self.ppu_controls.increment_scroll_y();
-            }
+                if self.cycle == 256 {
+                    self.ppu_controls.increment_scroll_y();
+                }
 
-            //...and reset the x position
-            if self.cycle == 257 {
-                self.load_background_shifters();
-                self.ppu_controls.transfer_address_x();
-            }
+                if self.cycle == 257 {
+                    self.load_background_shifters();
+                    self.ppu_controls.transfer_address_x();
+                }
+            },
 
-            // Superfluous reads of tile id at end of self.scanline
-            if self.cycle == 338 || self.cycle == 340 {
+            // Superfluous reads of tile id at end of scanline
+            (-1..240, 338 | 340) => {
                 self.bg_next_tile_id = self.read(0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF), cartridge);
-            }
+            },
 
-            if self.scanline == -1 && self.cycle >= 280 && self.cycle < 305 {
+            (-1, 280..305) => {
                 // End of vertical blank period so reset the Y address ready for rendering
                 self.ppu_controls.transfer_address_y();
-            }
-        }
+            },
+            
+            (-1..240, _) => {
+                // nothing happens on the rest of the cycles
+            },
 
-        if self.scanline == 240 {
-            // Post Render self.scanline - Do Nothing!
-        }
+            (240, _) => {
+                // Post Render Scanline - Do Nothing!
+            },
 
-        if self.scanline >= 241 && self.scanline < 261 {
-            if self.scanline == 241 && self.cycle == 1 {
+            (241, 1) => {
                 // Effectively end of frame, so set vertical blank flag
                 self.ppu_controls.status.set_vertical_blank(true);
 
@@ -241,55 +262,63 @@ impl<P: PixelBuffer> PPU<P> {
                 if self.ppu_controls.control.enable_nmi() {
                     self.nmi = true;
                 }
-            }
-        }
+            },
 
+            (241..261, _) => {
+                // nothing happens for the rest of the scanlines
+            },
+            
+            (..-1 | SCANLINE_NUMBER.., _) => unreachable!("scanlines are only between >= -1 and max"),
 
-
-        // Composition - We now have background & foreground pixel information for this self.cycle
-
-        // Background =============================================================
-        let mut bg_pixel: u8 = 0x00;   // The 2-bit pixel to be rendered
-        let mut bg_palette: u8 = 0x00; // The 3-bit index of the palette the pixel indexes
-
+            (_, CYCLE_NUMBER..) => unreachable!("cycles are only between >= 0 and max"),
+        }    
+        
         // We only render backgrounds if the PPU is enabled to do so. Note if 
         // background rendering is disabled, the pixel and palette combine
         // to form 0x00. This will fall through the colour tables to yield
         // the current background colour in effect
-        if self.ppu_controls.mask.render_background() {
-            // Handle Pixel Selection by selecting the relevant bit
-            // depending upon fine x scolling. This has the effect of
-            // offsetting ALL background rendering by a set number
-            // of pixels, permitting smooth scrolling
-            let bit_mux: u16 = 0x8000 >> self.ppu_controls.fine_x;
-
-            // Select Plane pixels by extracting from the shifter 
-            // at the required location. 
-            let p0_pixel: u8 = ((self.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
-            let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
-
-            // Combine to form pixel index
-            bg_pixel = (p1_pixel << 1) | p0_pixel;
-
-            // Get palette
-            let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
-            let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
-            bg_palette = (bg_pal1 << 1) | bg_pal0;
-        }
-
-        // Now we have a final pixel colour, and a palette for this self.cycle
-        // of the current self.scanline. Let's at long last, draw that ^&%*er :P
         if matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
-            let color = self.get_color_value_from_pallet_ram(bg_palette, bg_pixel);
+            let color = if self.ppu_controls.mask.render_background() {
+                // Composition - We now have backgrounjd pixel information for this cycle
+                // At this point we are only interested in background
+                
+                // Handle Pixel Selection by selecting the relevant bit
+                // depending upon fine x scolling. This has the effect of
+                // offsetting ALL background rendering by a set number
+                // of pixels, permitting smooth scrolling
+                let bit_mux: u16 = 0x8000 >> self.ppu_controls.fine_x;
+    
+                // Select Plane pixels by extracting from the shifter 
+                // at the required location. 
+                let p0_pixel: u8 = ((self.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
+                let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
+    
+                // Combine to form pixel index
+                let bg_pixel = (p1_pixel << 1) | p0_pixel;
+    
+                // Get palette
+                let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
+                let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
+                let bg_palette = (bg_pal1 << 1) | bg_pal0;
+
+                self.get_color_value_from_pallet_ram(bg_palette, bg_pixel)
+
+            } else {
+                0x00
+            };
+            
+            // Now we have a final pixel colour, and a palette for this cycle
+            // of the current scanline. Let's at long last, draw that ^&%*er :P
             self.screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
-        }
+        }    
 
         // Advance renderer - it never stops, it's relentless
         self.cycle += 1;
-        if self.cycle >= 341 {
+
+        if self.cycle >= CYCLE_NUMBER {
             self.cycle = 0;
             self.scanline += 1;
-            if self.scanline >= 261 {
+            if self.scanline >= SCANLINE_NUMBER {
                 self.scanline = -1;
                 self.frame_complete = true;
             }
@@ -297,7 +326,7 @@ impl<P: PixelBuffer> PPU<P> {
     }
     
     // Prime the "in-effect" background tile shifters ready for outputting next
-    // 8 pixels in self.scanline. 
+    // 8 pixels in scanline. 
     fn load_background_shifters(&mut self) {	
         // Each PPU update we calculate one pixel. These shifters shift 1 bit along
         // feeding the pixel compositor with the binary information it needs. Its
@@ -318,13 +347,13 @@ impl<P: PixelBuffer> PPU<P> {
         self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(1) == 1 { 0xFF } else { 0x00 });
     }
 
-    // Every self.cycle the shifters storing pattern and attribute information shift
-    // their contents by 1 bit. This is because every self.cycle, the output progresses
+    // Every cycle the shifters storing pattern and attribute information shift
+    // their contents by 1 bit. This is because every cycle, the output progresses
     // by 1 pixel. This means relatively, the state of the shifter is in sync
-    // with the pixels being drawn for that 8 pixel section of the self.scanline.
+    // with the pixels being drawn for that 8 pixel section of the scanline.
 
-    // All but 1 of the secanlines is visible to the user. The pre-render self.scanline
-    // at -1, is used to configure the "shifters" for the first visible self.scanline, 0.
+    // All but 1 of the secanlines is visible to the user. The pre-render scanline
+    // at -1, is used to configure the "shifters" for the first visible scanline, 0.
     fn update_shifters(&mut self) {
         if self.ppu_controls.mask.render_background() {
             // Shifting background tile pattern row
@@ -364,7 +393,7 @@ impl PPUControlRegisters {
         }
     }
 
-    // Increment the background tile "pointer" one self.scanline vertically
+    // Increment the background tile "pointer" one scanline vertically
     pub fn increment_scroll_y(&mut self) {
         // Incrementing vertically is more complicated. The visible nametable
         // is 32x30 tiles, but in memory there is enough room for 32x32 tiles.
@@ -380,20 +409,19 @@ impl PPUControlRegisters {
         // row offset, since fine_y is a value 0 to 7, and a row is 8 pixels high
 
         // Ony if rendering is enabled
-        if !(self.mask.render_background() || self.mask.render_sprites()) {
-            return;
-        }
+        if self.mask.render_background() || self.mask.render_sprites() {
+            // If possible, just increment the fine y offset
+            if self.vram_address.fine_y() < 7 {
+                self.vram_address.set_fine_y(self.vram_address.fine_y() + 1);
+                return;
+            }
 
-        // If possible, just increment the fine y offset
-        if self.vram_address.fine_y() < 7 {
-            self.vram_address.set_fine_y(self.vram_address.fine_y() + 1);
-        } else {
             // If we have gone beyond the height of a row, we need to
             // increment the row, potentially wrapping into neighbouring
             // vertical nametables. Dont forget however, the bottom two rows
             // do not contain tile information. The coarse y offset is used
             // to identify which row of the nametable we want, and the fine
-            // y offset is the specific "self.scanline"
+            // y offset is the specific "scanline"
 
             // Reset fine y offset
             self.vram_address.set_fine_y(0);

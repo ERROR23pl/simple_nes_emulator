@@ -75,8 +75,8 @@ impl From<&NametableArrangement> for Mirroring {
     fn from(value: &NametableArrangement) -> Self {
         use NametableArrangement as NA;
         match value {
-            NA::Horizontal => Mirroring::Horizontal,
-            NA::Vertical => Mirroring::Vertical,
+            NA::Horizontal => Mirroring::Vertical,
+            NA::Vertical => Mirroring::Horizontal,
         }
     }
 }

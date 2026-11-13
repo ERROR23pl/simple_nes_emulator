@@ -1,7 +1,8 @@
 pub mod ppu_controls;
 mod ppu_clock;
+mod oam;
 
-
+use oam::*;
 use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::ppu::ppu_controls::PPUControlRegisters;
 use crate::rendering::{NesColor, PAL_COLOR, PatternTable, PixelBuffer};
@@ -10,7 +11,6 @@ use itertools::iproduct;
 use log::error;
 
 pub struct PPU<P: PixelBuffer> {
-    
     name_table: [[u8; 1024]; 2], // NES stores two 1KB name tables (vram)
     palette: [u8; 32],
     pub ppu_controls: PPUControlRegisters,
@@ -31,6 +31,10 @@ pub struct PPU<P: PixelBuffer> {
 	bg_shifter_pattern_hi: u16,
 	bg_shifter_attrib_lo: u16,
 	bg_shifter_attrib_hi: u16,
+
+    // Object Attribute Memory (OAM, used for sprites AKA foreground graphics)
+    oam: OAM,
+    oam_address: u8,    
 
     // rendering tool to render emulate sending a signal to TV.
     // It's generic to allow multiple implementations. 
@@ -58,6 +62,9 @@ impl<P: PixelBuffer> PPU<P> {
             bg_shifter_pattern_hi: 0x0000,
             bg_shifter_attrib_lo: 0x0000,
             bg_shifter_attrib_hi: 0x0000,
+
+            oam: OAM::default(),
+            oam_address: 0,
 
             screen: screen_buffer,
             pattern_table_screen
@@ -177,8 +184,8 @@ impl<P: PixelBuffer> PPU<P> {
         let initial_address = (pallette_id as usize * 4) + pixel_id as usize;
 
         // My way
-        let initial_address = initial_address & 0x001F;
-        let addr = if pixel_id == 0 { 0 } else { initial_address }; 
+        let mirrored_address = initial_address & 0x001F;
+        let addr = if pixel_id == 0 { 0 } else { mirrored_address }; 
 
         // let mirrored_address = if initial_address & 0x03 == 0 { 0 } else { initial_address & 0x1F };
         // let mirrored_address = match initial_address {
@@ -197,7 +204,7 @@ impl<P: PixelBuffer> PPU<P> {
         // if addr == 0x0014 { addr = 0x0004 };
         // if addr == 0x0018 { addr = 0x0008 };
         // if addr == 0x001C { addr = 0x000C };
-        self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
+        self.palette[addr as usize] /* & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F }) */
     }
 }
 
