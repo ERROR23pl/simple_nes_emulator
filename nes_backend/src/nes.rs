@@ -56,7 +56,6 @@ impl<P: PixelBuffer> NES<P> {
                     } else {
                         self.cpu.ppu.oam[self.dma_address] = self.dma_data;
                        
-                        
                         self.dma_address = self.dma_address.wrapping_add(1);
 
                         if self.dma_address == 0x00 {

@@ -37,6 +37,8 @@ pub struct PPU<P: PixelBuffer> {
     pub oam_address: u8,
     sprite_scanline: [OamEntry; 8],
     sprite_count: u8,
+    sprite_shifter_lo: [u8; 8],
+    sprite_shifter_hi: [u8; 8],
 
     // rendering tool to render emulate sending a signal to TV.
     // It's generic to allow multiple implementations. 
@@ -69,6 +71,8 @@ impl<P: PixelBuffer> PPU<P> {
             oam_address: 0,
             sprite_scanline: [OamEntry::default(); 8],
             sprite_count: 0,
+            sprite_shifter_lo: [0; 8],
+            sprite_shifter_hi: [0; 8],
 
             screen: screen_buffer,
             pattern_table_screen,

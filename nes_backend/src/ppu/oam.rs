@@ -3,10 +3,10 @@ use std::{fmt::Display, ops::{Index, IndexMut}};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OamEntry {
-    y: u8,
-    id: u8,
-    attribute: u8,
-    x: u8,
+    pub y: u8,
+    pub id: u8,
+    pub attribute: u8,
+    pub x: u8,
 }
 
 impl Display for OamEntry {
@@ -15,12 +15,22 @@ impl Display for OamEntry {
     }
 }
 
+impl OamEntry {
+    pub fn invisible() -> Self {
+        OamEntry {
+            y: 0xFF,
+            id: 0xFF,
+            attribute: 0xFF,
+            x: 0xFF,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OAM {
     entries: [OamEntry; 64],
 }
 
-// todo: czy na pewno?
 impl Default for OAM {
     fn default() -> Self {
         Self {
@@ -32,6 +42,10 @@ impl Default for OAM {
 impl OAM {
     pub fn get_entry(&self, index: usize) -> &OamEntry {
         &self.entries[index]
+    }
+
+    pub fn get_entries(&self) -> &[OamEntry] {
+        &self.entries
     }
 }
 
