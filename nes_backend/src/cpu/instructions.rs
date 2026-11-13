@@ -457,8 +457,8 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
             
-            IT::INX => { self.reg_x += 1; incr_flags!(self, self.reg_x) },
-            IT::INY => { self.reg_y += 1; incr_flags!(self, self.reg_y) },
+            IT::INX => { self.reg_x.wrapping_add_mut(1); incr_flags!(self, self.reg_x) },
+            IT::INY => { self.reg_y.wrapping_add_mut(1); incr_flags!(self, self.reg_y) },
             
             IT::DEC => {
                 self.fetch_data();
@@ -472,8 +472,8 @@ impl<P: PixelBuffer> CPU<P> {
                 false
             },
             
-            IT::DEX => { self.reg_x -= 1; incr_flags!(self, self.reg_x) },
-            IT::DEY => { self.reg_y -= 1; incr_flags!(self, self.reg_y) },
+            IT::DEX => { self.reg_x.wrapping_sub_mut(1); incr_flags!(self, self.reg_x) },
+            IT::DEY => { self.reg_y.wrapping_sub_mut(1); incr_flags!(self, self.reg_y) },
             
             // ---------- SHIFT ----------
             IT::ASL => {

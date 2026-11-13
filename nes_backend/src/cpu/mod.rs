@@ -47,6 +47,10 @@ pub struct CPU<P: PixelBuffer> {
     pub ppu: PPU<P>,
     pub controlers: [u8; 2],
     controlers_state: [u8; 2],
+
+    // DMA variables
+    pub dma_page: u8,
+    pub dma_transfer: bool,
     
     // helper variables
     fetched: u8,
@@ -73,6 +77,10 @@ impl<P: PixelBuffer> CPU<P> {
             ppu,
             controlers: [0, 0],
             controlers_state: [0, 0],
+
+            // DMA
+            dma_page: 0x00,
+            dma_transfer: false,
 
             // helper variables
             fetched: 0,
@@ -107,6 +115,11 @@ impl<P: PixelBuffer> CPU<P> {
         match address {
             0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
             0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
+            0x4014 => {
+                self.dma_page = data;
+                println!("page: {}", data);
+                self.dma_transfer = true;
+            }
             0x4016 | 0x4017 => {
                 let which_controler = (address & 0x0001) as usize;
                 self.controlers_state[which_controler] = self.controlers[which_controler]
@@ -158,9 +171,14 @@ impl<P: PixelBuffer> CPU<P> {
                 retrieved_data
             },
 
-            OAM_ADDRESS => { warn!("unimplemented. returning dummy 0 value."); 0 },
+            OAM_ADDRESS => {
+                warn!("Reading OAM address, it doesn't make sense. Returned actuall value");
+                self.ppu.oam_address
+            },
 
-            OAM_DATA => { warn!("unimplemented. returning dummy 0 value."); 0 },
+            OAM_DATA => {
+                self.ppu.oam[self.ppu.oam_address]
+            },
 
             SCROLL => { warn!("unimplemented. returning dummy 0 value."); 0 },
             
@@ -202,9 +220,9 @@ impl<P: PixelBuffer> CPU<P> {
 
             STATUS => error!("Attempted to write {:02X} into status register.", data),
 
-            OAM_ADDRESS => { warn!("OAM_ADDRESS write unimplemented") },
+            OAM_ADDRESS => { self.ppu.oam_address = data },
 
-            OAM_DATA => { warn!("OAM_DATA write unimplemented") },
+            OAM_DATA => { self.ppu.oam[self.ppu.oam_address] = data },
 
             SCROLL => {
                 use WritingAddressPart as WAP;

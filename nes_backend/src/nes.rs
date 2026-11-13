@@ -1,11 +1,20 @@
 use crate::{
-    cartridge::Cartridge, cpu::{CPU, CPU_RAM_SIZE}, ppu::PPU, rendering::{DummyBuffer, PatternTable, PixelBuffer}
+    bit_operations::glue_u8s, cartridge::Cartridge, cpu::{CPU, CPU_RAM_SIZE}, ppu::{OAM, PPU}, rendering::{DummyBuffer, PatternTable, PixelBuffer}
 };
 
 
 #[derive(derive_getters::Getters)]
 pub struct NES<P: PixelBuffer> {
     pub cpu: CPU<P>,
+
+    // DMA transfer
+    dma_proper_clock_cycle_reached: bool,
+    dma_data: u8,
+    dma_address: u8,
+    oam_debug_copy: OAM,
+
+
+    // debug stuff
     clock_count: usize,
     frame_count: usize,
 }
@@ -14,8 +23,14 @@ impl<P: PixelBuffer> NES<P> {
     pub fn new(pixel_buffer: P, debug_pattern_screen: P, cartridge: Cartridge) -> Self {
         Self {
             cpu: CPU::new(cartridge, PPU::new(pixel_buffer, debug_pattern_screen)),
+
             clock_count: 0,
             frame_count: 0,
+
+            dma_proper_clock_cycle_reached: false,
+            dma_data: 0,
+            dma_address: 0,
+            oam_debug_copy: OAM::default(),
         }
     }
 
@@ -29,7 +44,32 @@ impl<P: PixelBuffer> NES<P> {
         
         // PPU clock is 3x faster than CPU clock
         if self.clock_count % 3 == 0 {
-            self.cpu.clock();
+            // todo: HOLY FUCK that's ugly, please change this.
+            if self.cpu.dma_transfer {
+                if !self.dma_proper_clock_cycle_reached {
+                    if self.clock_count % 2 != 0 {
+                        self.dma_proper_clock_cycle_reached = true;
+                    }
+                } else {
+                    if self.clock_count % 2 == 0 {
+                        self.dma_data = self.cpu.read(glue_u8s(self.cpu.dma_page, self.dma_address), true);
+                    } else {
+                        self.cpu.ppu.oam[self.dma_address] = self.dma_data;
+                       
+                        
+                        self.dma_address = self.dma_address.wrapping_add(1);
+
+                        if self.dma_address == 0x00 {
+                            self.cpu.dma_transfer = false;
+                            self.dma_proper_clock_cycle_reached = false;
+                            self.oam_debug_copy = self.cpu.ppu.oam.clone();
+                        }
+                    }
+
+                }
+            } else {
+                self.cpu.clock();
+            }
         }
 
         if self.cpu.ppu.nmi {

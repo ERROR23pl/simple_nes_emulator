@@ -11,11 +11,11 @@ pub struct OamEntry {
 
 impl Display for OamEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "({:03}, {:03}) | id: {:02X} | attribute: {:02X}", self.x, self.y, self.id, self.attribute)
+        write!(f, "({:03}, {:03}) | id: {:02X} | attribute: {:02X}", self.x, self.y, self.id, self.attribute)
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OAM {
     entries: [OamEntry; 64],
 }
@@ -39,7 +39,7 @@ impl Index<u8> for OAM {
     type Output = u8;
 
     fn index(&self, index: u8) -> &Self::Output {
-        let (entry, field) = (index / 64, index % 4);
+        let (entry, field) = (index / 4, index % 4);
 
         match field {
             0 => &self.entries[entry as usize].y,
@@ -54,7 +54,7 @@ impl Index<u8> for OAM {
 
 impl IndexMut<u8> for OAM {
     fn index_mut(&mut self, index: u8) -> &mut Self::Output {
-        let (entry, field) = (index / 64, index % 4);
+        let (entry, field) = (index / 4, index % 4);
 
         match field {
             0 => &mut self.entries[entry as usize].y,

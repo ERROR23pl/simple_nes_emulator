@@ -9,6 +9,7 @@ impl crate::App {
         self.cpu_state(ctx);
         self.program_counter_state(ctx);
         self.ram_state(ctx);
+        self.oam_state(ctx);
     }
 
     fn pattern_screen(&mut self, ctx: &egui::Context) {
@@ -89,6 +90,9 @@ impl crate::App {
             .id("program_state".into())
             .resizable(true)
             .show(ctx, |ui| {
+                ui.label(format!("DMA happening: {}", nes.cpu.dma_transfer));
+                ui.separator();
+
                 ui.label(format!("nes cycle count: {}", nes.clock_count()));
                 ui.label(format!("frame count: {}", nes.frame_count()));
 
@@ -237,6 +241,24 @@ impl crate::App {
                     });
             });
     }
+
+    fn oam_state(&mut self, ctx: &egui::Context) {
+        if !self.app_settings.show.oam { return; }
+        
+        let nes = self.nes.as_mut().expect("I've already checked if it's Some(_) on the call site.");
+        
+        egui::Window::new("OAM state")
+            .resizable(true)
+            .id("oam_state".into())
+            .scroll([false, true])
+            .show(ctx, |ui| {
+                let oam = &nes.oam_debug_copy();
+
+                for i in 0..64 {
+                    ui.label(egui::RichText::from(format!("{:02}. {}", i, oam.get_entry(i))).monospace());
+                }
+            });
+    }   
 
     pub fn controller_input(&self, ctx: &egui::Context) {
         egui::Window::new("controller_debug").show(ctx, |ui| {

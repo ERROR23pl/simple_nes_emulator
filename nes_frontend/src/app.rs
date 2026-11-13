@@ -149,11 +149,12 @@ pub struct ShowSettings {
     cpu_state: bool,
     program_counter: bool,
     ram: bool,
+    oam: bool,
 }
 
 impl Default for ShowSettings {
     fn default() -> Self {
-        Self { pattern_memory: true, cpu_state: true, program_counter: true, ram: true }
+        Self { pattern_memory: true, cpu_state: true, program_counter: true, ram: true, oam: true }
     }
 }
 

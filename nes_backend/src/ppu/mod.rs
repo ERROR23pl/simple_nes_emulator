@@ -2,7 +2,7 @@ pub mod ppu_controls;
 mod ppu_clock;
 mod oam;
 
-use oam::*;
+pub use oam::*;
 use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::ppu::ppu_controls::PPUControlRegisters;
 use crate::rendering::{NesColor, PAL_COLOR, PatternTable, PixelBuffer};
@@ -33,8 +33,10 @@ pub struct PPU<P: PixelBuffer> {
 	bg_shifter_attrib_hi: u16,
 
     // Object Attribute Memory (OAM, used for sprites AKA foreground graphics)
-    oam: OAM,
-    oam_address: u8,    
+    pub oam: OAM,
+    pub oam_address: u8,
+    sprite_scanline: [OamEntry; 8],
+    sprite_count: u8,
 
     // rendering tool to render emulate sending a signal to TV.
     // It's generic to allow multiple implementations. 
@@ -65,9 +67,11 @@ impl<P: PixelBuffer> PPU<P> {
 
             oam: OAM::default(),
             oam_address: 0,
+            sprite_scanline: [OamEntry::default(); 8],
+            sprite_count: 0,
 
             screen: screen_buffer,
-            pattern_table_screen
+            pattern_table_screen,
         }
     }
     
