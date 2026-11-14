@@ -36,9 +36,9 @@ impl TryFrom<&INesFile> for Cartridge {
     type Error = UnimplementedMapperError;
 
     fn try_from(file: &INesFile) -> Result<Self, Self::Error> {
-        println!("---------------------------");
-        println!("mirroring by bitfield: {:?}", Mirroring::from(file.header().flags6().nametable_arrangement()));
-        println!("mirroring by manual: {:?}", Mirroring::from(*file.header().nametable_arrangement()));
+        // println!("---------------------------");
+        // println!("mirroring by bitfield: {:?}", Mirroring::from(file.header().flags6().nametable_arrangement()));
+        // println!("mirroring by manual: {:?}", Mirroring::from(*file.header().nametable_arrangement()));
 
         Ok(Cartridge {
             prg_memory: file.prg_rom_data().clone(),
