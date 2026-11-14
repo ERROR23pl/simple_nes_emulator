@@ -7,7 +7,7 @@ pub mod disassembler;
 use crate::{
     bit_operations::*,
     cartridge::Cartridge,
-    ppu::{PPU, ppu_controls::WritingAddressPart},
+    ppu::{PPU, WritingAddressPart},
     rendering::{PatternTable, PixelBuffer},
 };
 use addressing::*;

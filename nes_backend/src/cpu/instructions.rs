@@ -302,7 +302,7 @@ macro_rules! load {
             $self.fetch_data();
             $register = $self.fetched;
             $self.set_flag(StatusFlag::Zero, $register == 0x00);
-            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
+            $self.set_flag(StatusFlag::Negative, $register.nth_flag(7));
             
             true
         }
@@ -314,7 +314,7 @@ macro_rules! transfer {
         {
             $self.$to = $self.$from;
             $self.set_flag(StatusFlag::Zero, $self.$to == 0x00);
-            $self.set_flag(StatusFlag::Negative, $self.$to.nth_bit(7) != 0);
+            $self.set_flag(StatusFlag::Negative, $self.$to.nth_flag(7));
             false
         }
     };
@@ -324,7 +324,7 @@ macro_rules! incr_flags {
     ($self:ident, $register:expr) => {
         {
             $self.set_flag(StatusFlag::Zero, $register == 0x00);
-            $self.set_flag(StatusFlag::Negative, $register.nth_bit(7) != 0);
+            $self.set_flag(StatusFlag::Negative, $register.nth_flag(7));
             
             false
         }
@@ -340,8 +340,8 @@ macro_rules! compare {
 
             $self.set_flag(StatusFlag::Carry, $register >= $self.fetched);
             $self.set_flag(StatusFlag::Zero, $register == $self.fetched);
-            $self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0); // todo: is this correct?
-            // $self.set_flag(StatusFlag::Negative, ((temp & 0x00FF) as u8).nth_bit(7) != 0);
+            $self.set_flag(StatusFlag::Negative, temp.nth_flag(7)); // todo: is this correct?
+            // $self.set_flag(StatusFlag::Negative, ((temp & 0x00FF) as u8).nth_flag(7));
         }
     };
 }
@@ -452,7 +452,7 @@ impl CPU {
                 self.write(self.addr_abs, temp);
 
                 self.set_flag(StatusFlag::Zero, temp == 0x0000);
-                self.set_flag(StatusFlag::Negative, temp.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Negative, temp.nth_flag(7));
                 
                 false
             },
@@ -481,9 +481,9 @@ impl CPU {
                 
                 let new_value = self.fetched << 1;
 
-                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_flag(7));
                 self.set_flag(StatusFlag::Zero, new_value == 0x00);
-                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Negative, new_value.nth_flag(7));
                 
                 if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
                     self.acc = new_value;
@@ -500,7 +500,7 @@ impl CPU {
                 
                 let new_value = self.fetched >> 1;	
 
-                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(0) != 0);
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_flag(0));
                 self.set_flag(StatusFlag::Zero, new_value == 0x0000);
                 // self.set_flag(StatusFlag::Negative, new_value & 0x80 != 0);
                 self.set_flag(StatusFlag::Negative, false); // ? value cannot be negative here
@@ -524,9 +524,9 @@ impl CPU {
                 // which has to suffice, since after shifting bit 0 has to be equal to 0
                 let new_value = (self.fetched << 1) | carry_flag;
                 
-                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_flag(7));
                 self.set_flag(StatusFlag::Zero, new_value == 0x00);
-                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Negative, new_value.nth_flag(7));
                 
                 if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
                     self.acc = new_value;
@@ -543,9 +543,9 @@ impl CPU {
                 let carry_flag = self.get_flag(StatusFlag::Carry) as u8;
                 let new_value = (self.fetched >> 1) | (carry_flag << 7);
                 
-                self.set_flag(StatusFlag::Carry, self.fetched.nth_bit(0) != 0);
+                self.set_flag(StatusFlag::Carry, self.fetched.nth_flag(0));
                 self.set_flag(StatusFlag::Zero, new_value == 0x00);
-                self.set_flag(StatusFlag::Negative, new_value.nth_bit(7) != 0);
+                self.set_flag(StatusFlag::Negative, new_value.nth_flag(7));
                 
                 if *INSTRUCTION_LOOKUP[self.opcode as usize].mode() == AddressingMode::IMP {
                     self.acc = new_value;
@@ -592,8 +592,8 @@ impl CPU {
                 let temp = self.acc & self.fetched;
 
                 self.set_flag(StatusFlag::Zero, temp == 0x00);
-                self.set_flag(StatusFlag::Negative, self.fetched.nth_bit(7) != 0);
-                self.set_flag(StatusFlag::Overflow, self.fetched.nth_bit(6) != 0);
+                self.set_flag(StatusFlag::Negative, self.fetched.nth_flag(7));
+                self.set_flag(StatusFlag::Overflow, self.fetched.nth_flag(6));
                 
                 false
             },   

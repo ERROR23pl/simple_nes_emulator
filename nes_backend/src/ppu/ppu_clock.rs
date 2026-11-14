@@ -335,13 +335,13 @@ impl PPU {
                             if (self.scanline as u16) - (self.sprite_scanline[i].y as u16)  < 8 {
                                 // reading top half
                                 sprite_pattern_addr_lo = 
-                                    ((self.sprite_scanline[i].id.nth_bit(0) as u16) << 12) |
+                                    (self.sprite_scanline[i].id.nth_bit::<u16>(0) << 12) |
                                     ((((self.sprite_scanline[i].id & 0xFE) + 1) as u16) << 4) |
                                     ((self.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
                             } else {
                                 // reading bottom top of tile
                                 sprite_pattern_addr_lo = 
-                                    ((self.sprite_scanline[i].id.nth_bit(0) as u16) << 12) |
+                                    (self.sprite_scanline[i].id.nth_bit::<u16>(0) << 12) |
                                     ((self.sprite_scanline[i].id as u16) << 4) |
                                     ((self.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
                             }
@@ -423,8 +423,8 @@ impl PPU {
 
                 for i in 0..(self.sprite_count as usize) {
                     if self.sprite_scanline[i].x == 0 {
-                        let fg_pixel_lo = self.sprite_shifter_lo[i].nth_bit(7);
-                        let fg_pixel_hi = self.sprite_shifter_hi[i].nth_bit(7);
+                        let fg_pixel_lo = self.sprite_shifter_lo[i].nth_bit::<u8>(7);
+                        let fg_pixel_hi = self.sprite_shifter_hi[i].nth_bit::<u8>(7);
                         fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
 
                         fg_palette = (self.sprite_scanline[i].attribute & 0x03) + 0x04;
@@ -509,8 +509,8 @@ impl PPU {
         // we take the bottom 2 bits of the attribute word which represent which 
         // palette is being used for the current 8 pixels and the next 8 pixels, and 
         // "inflate" them to 8 bit words.
-        self.bg_shifter_attrib_lo  = (self.bg_shifter_attrib_lo & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(0) == 1 { 0xFF } else { 0x00 });
-        self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit(1) == 1 { 0xFF } else { 0x00 });
+        self.bg_shifter_attrib_lo  = (self.bg_shifter_attrib_lo & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit::<u8>(0) == 1 { 0xFF } else { 0x00 });
+        self.bg_shifter_attrib_hi  = (self.bg_shifter_attrib_hi & 0xFF00) | (if self.bg_next_tile_attrib.nth_bit::<u8>(1) == 1 { 0xFF } else { 0x00 });
     }
 
     // Every cycle the shifters storing pattern and attribute information shift

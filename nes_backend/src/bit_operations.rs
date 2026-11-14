@@ -1,47 +1,28 @@
 pub const KB: usize = 1024;
 
 pub trait BitManipulation {
-    fn nth_bit(&self, bit_index: u8) -> u8;
-    fn nth_flag(&self, bit_index: u8) -> bool {
-        match self.nth_bit(bit_index) {
-            0 => false,
-            1 => true,
-            2.. => unreachable!("GetBits::nth_bit should return only 1 or 0"),
-        }
-    }
-
-    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self;
-}
-
-impl BitManipulation for u8 {
-    fn nth_bit(&self, bit_index: u8) -> u8 {
-        // self & (1 << bit_index) masks off the proper bit
-        // >> bit_index shifts the index to the first digit
-        // so the result is 0 or 1
-        (self & (1 << bit_index)) >> bit_index
-    }
-    
-    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self {
-        let length = higher_bound - lower_bound + 1;
-
-        (self >> lower_bound) & (0xFF << length)
+    fn nth_flag(self, bit_index: u8) -> bool;
+    fn nth_bit<T: From<bool>>(self, bit_index: u8) -> T where Self: Sized{
+        T::from(self.nth_flag(bit_index))
     }
 }
 
-impl BitManipulation for u16 {
-    fn nth_bit(&self, bit_index: u8) -> u8 {
-        // self & (1 << bit_index) masks off the proper bit
-        // >> bit_index shifts the index to the first digit
-        // so the result is 0 or 1
-        ((self & (1 << bit_index)) >> bit_index) as u8
-    }
-    
-    fn mask(&self, higher_bound: u8, lower_bound: u8) -> Self {
-        let length = higher_bound - lower_bound + 1;
+macro_rules! impl_bit_maniuplation {
+    ($type_: tt) => {
+        impl BitManipulation for $type_ {
+            fn nth_flag(self, bit_index: u8) -> bool {
+                let mask = (1 as $type_) << bit_index;
 
-        (self >> lower_bound) & (0xFF << length)
-    }
+                (self & mask) != 0
+            }
+        }       
+    };
 }
+
+impl_bit_maniuplation!(u8);
+impl_bit_maniuplation!(u16);
+
+
 
 #[inline]
 pub fn glue_u8s(high_byte: u8, low_byte: u8) -> u16 {
@@ -63,4 +44,30 @@ pub fn get_high_byte(number: u16) -> u8 {
 #[inline]
 pub fn get_low_byte(number: u16) -> u8 {
     (number & 0x00FF) as u8
+}
+
+
+pub fn mask(number: u8, upper: u8, lower: u8) -> u8 {
+    let number_of_ones = (upper - lower) + 1;
+    let temp = u8::MAX >> (8 - number_of_ones);
+    let mask = temp << lower;
+
+    let masked_number = number & mask;
+
+    masked_number >> lower
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn mask_test() {
+        assert_eq!(mask(0b0000_0001, 0, 0), 0b1);
+        assert_eq!(mask(0b0000_1000, 3, 3), 0b1);
+        assert_eq!(mask(0b0000_1000, 3, 2), 0b10);
+        assert_eq!(mask(0b0000_1010, 3, 1), 0b101);
+        assert_eq!(mask(0b0000_1010, 3, 0), 0b1010);
+        assert_eq!(mask(0b0101_1010, 6, 3), 0b1011);
+    }
 }
