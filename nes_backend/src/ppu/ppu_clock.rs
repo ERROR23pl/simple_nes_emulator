@@ -22,6 +22,7 @@ impl<P: PixelBuffer> PPU<P> {
             // Effectively start of new frame, so clear vertical blank flag
             (-1, 1) => { 
                 self.ppu_controls.status.set_vertical_blank(false);
+                self.ppu_controls.status.set_sprite_zero_hit(false);
                 self.ppu_controls.status.set_sprite_overflow(false);
                 
                 self.sprite_shifter_lo = [0; 8];
@@ -282,11 +283,16 @@ impl<P: PixelBuffer> PPU<P> {
                 self.sprite_scanline = [OamEntry::invisible(); 8];
                 self.sprite_count = 0;
 
+                let mut sprite_zero = true;
+                self.sprite_zero_hit_possible = false;
                 for sprite in self.oam.get_entries() {
                     let diff = (self.scanline as i16) - (sprite.y as i16);
 
                     if diff >= 0 && diff < if self.ppu_controls.control.sprite_size() { 16 } else { 8 } {
                         if self.sprite_count < 8 {
+                            if sprite_zero {
+                                self.sprite_zero_hit_possible = true;
+                            }
                             self.sprite_scanline[self.sprite_count as usize] = *sprite;
                             self.sprite_count += 1;
                         } else {
@@ -294,6 +300,8 @@ impl<P: PixelBuffer> PPU<P> {
                             break;
                         }
                     }
+
+                    sprite_zero = false;
                 }
             },
 
@@ -411,6 +419,8 @@ impl<P: PixelBuffer> PPU<P> {
             let mut fg_priority: bool = true;
 
             if self.ppu_controls.mask.render_sprites() {
+                self.sprite_zero_being_rendered = false;
+
                 for i in 0..(self.sprite_count as usize) {
                     if self.sprite_scanline[i].x == 0 {
                         let fg_pixel_lo = self.sprite_shifter_lo[i].nth_bit(7);
@@ -421,6 +431,9 @@ impl<P: PixelBuffer> PPU<P> {
                         fg_priority = self.sprite_scanline[i].attribute & 0x20 == 0;
                         
                         if fg_pixel != 0 {
+                            if i == 0 {
+                                self.sprite_zero_being_rendered = true;
+                            }
                             break;
                         }
                     }
@@ -431,8 +444,30 @@ impl<P: PixelBuffer> PPU<P> {
                 (0, 0) => (0, 0),
                 (0, _) => (fg_pixel, fg_palette),
                 (_, 0) => (bg_pixel, bg_palette),
-                (_, _) if fg_priority => (fg_pixel, fg_palette),
-                (_, _) => (bg_pixel, bg_palette),
+                (_, _) => {
+                    let mask = self.ppu_controls.mask;
+
+                    if self.sprite_zero_hit_possible &&
+                        self.sprite_zero_being_rendered &&
+                        mask.render_background() &&
+                        mask.render_sprites()
+                    {
+                        if !(mask.render_background_left() || mask.render_sprites_left()) {
+                            if matches!(self.cycle, 9..258) {
+                                self.ppu_controls.status.set_sprite_zero_hit(true);
+                            }
+                        } else {
+                            if matches!(self.cycle, 1..258) {
+                                self.ppu_controls.status.set_sprite_zero_hit(true);
+                            }
+                        }
+                    }
+                    if fg_priority {
+                        (fg_pixel, fg_palette)
+                    } else {
+                        (bg_pixel, bg_palette)
+                    }
+                }
             };
 
 

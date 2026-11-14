@@ -39,6 +39,8 @@ pub struct PPU<P: PixelBuffer> {
     sprite_count: u8,
     sprite_shifter_lo: [u8; 8],
     sprite_shifter_hi: [u8; 8],
+    sprite_zero_hit_possible: bool,
+    sprite_zero_being_rendered: bool,
 
     // rendering tool to render emulate sending a signal to TV.
     // It's generic to allow multiple implementations. 
@@ -73,6 +75,8 @@ impl<P: PixelBuffer> PPU<P> {
             sprite_count: 0,
             sprite_shifter_lo: [0; 8],
             sprite_shifter_hi: [0; 8],
+            sprite_zero_hit_possible: false,
+            sprite_zero_being_rendered: false,
 
             screen: screen_buffer,
             pattern_table_screen,
@@ -192,8 +196,8 @@ impl<P: PixelBuffer> PPU<P> {
         let initial_address = (pallette_id as usize * 4) + pixel_id as usize;
 
         // My way
-        let mirrored_address = initial_address & 0x001F;
-        let addr = if pixel_id == 0 { 0 } else { mirrored_address }; 
+        // let mirrored_address = initial_address & 0x001F;
+        // let addr = if pixel_id == 0 { 0 } else { mirrored_address }; 
 
         // let mirrored_address = if initial_address & 0x03 == 0 { 0 } else { initial_address & 0x1F };
         // let mirrored_address = match initial_address {
@@ -207,12 +211,12 @@ impl<P: PixelBuffer> PPU<P> {
         // self.palette[mirrored_address as usize]
 
         // Jarvis way
-        // let mut addr = initial_address & 0x001F;
-        // if addr == 0x0010 { addr = 0x0000 };
-        // if addr == 0x0014 { addr = 0x0004 };
-        // if addr == 0x0018 { addr = 0x0008 };
-        // if addr == 0x001C { addr = 0x000C };
-        self.palette[addr as usize] /* & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F }) */
+        let mut addr = initial_address & 0x001F;
+        if addr == 0x0010 { addr = 0x0000 };
+        if addr == 0x0014 { addr = 0x0004 };
+        if addr == 0x0018 { addr = 0x0008 };
+        if addr == 0x001C { addr = 0x000C };
+        self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
     }
 }
 
