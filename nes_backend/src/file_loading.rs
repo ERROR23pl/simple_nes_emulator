@@ -32,6 +32,7 @@ pub struct INesFileHeader {
     chr_rom_size: u8,    
 
     // flags 6
+    flags6: Flags6,
     nametable_arrangement: NametableArrangement,
     contains_battery_ram: bool,
     trainer_present: bool,
@@ -56,21 +57,16 @@ pub struct INesFileHeader {
 
 type Trainer = [u8; 512];
 
-#[derive(Debug, Specifier)]
-#[bits = 1]
-pub enum NametableArrangement {
-    Vertical = 0,
-    Horizontal = 1,
-}
-
-
 impl INesFile {
     pub fn try_new_from_path(location: impl AsRef<Path>) -> Result<INesFile, FileDecodingError> {
         let mut file = File::open(location)?;
 
-        let header = INesFileHeader::new_from_file(&mut file)?;
+        // the header lives in the first 16 bytes of the file
+        let mut header_bytes = [0u8; 16];
+        file.read_exact(&mut header_bytes)?;
+        let header = INesFileHeader::new_from_bytes(header_bytes)?;
 
-        let trainer = if header.trainer_present {
+        let trainer = if header.flags6.trainer_present() {
             let mut trainer_data = [0u8; 512];
             file.read_exact(&mut trainer_data)?;
             Some(trainer_data)
@@ -112,23 +108,6 @@ impl INesFile {
 }
 
 
-// #[bitfield(bits = 8)]
-// struct Flags6 {
-//     nametable_arrangement: NametableArrangement,
-//     contains_batter_ram: bool,
-//     trainer_present: bool,
-//     alternative_nametable_layout: bool,
-//     mapper_lower_nibble: B4,
-// }
-
-// #[bitfield(bits = 8)]
-// struct Flags7 {
-//     vs_unisystem: bool,
-//     playchoice_10: B1,
-//     nes20_format: B2,
-//     mapper_upper_nibble: B4,
-// }
-
 #[derive(Debug, Error)]
 pub enum FileDecodingError {
     #[error("The first 4 bytes of the file don't match the standard 4-byte header. Expected `[N, E, S, 0x1A]`, but found `{0:?}` ")]
@@ -138,25 +117,26 @@ pub enum FileDecodingError {
     IO(#[from] io::Error),
 }
 
-impl INesFileHeader {
-    pub fn new_from_file(file: &mut File) -> Result<INesFileHeader, FileDecodingError> {
-        // the header lives in the first 16 bytes of the file
-        let mut header_buffer = [0u8; 16];
-        file.read(&mut header_buffer)?;
 
+
+impl INesFileHeader {
+    pub fn new_from_bytes(bytes: [u8; 16]) -> Result<INesFileHeader, FileDecodingError> {
         // it should follow this specific layout
-        let nes_ascii = &header_buffer[0..4];
+        let nes_ascii = &bytes[0..4];
         
-        let prg_rom_size = &header_buffer[4];
-        let chr_rom_size = &header_buffer[5];
+        let flags6 = &bytes[6];
+        let flags6_bitfield = Flags6::from(bytes[6]);
+
+        println!("raw sixth byte: {:08b}", bytes[6]);
+        println!("0th bit of that byte: {}", bytes[6].nth_bit::<u8>(0));
+        println!("NT arrangement read by a bitfield: {:?}", flags6_bitfield.nametable_arrangement());
         
-        let flags6 = &header_buffer[6];
-        let flags7 = &header_buffer[7];
-        let flags8 = &header_buffer[8];
-        let flags9 = &header_buffer[9];
-        let flags10 = &header_buffer[10];
+        let flags7 = &bytes[7];
+        let flags8 = &bytes[8];
+        let flags9 = &bytes[9];
+        let flags10 = &bytes[10];
         
-        let padding: [u8; 5] = (&header_buffer[11..16]).try_into().expect("This slice is obviously 5 elements long.");
+        let padding: [u8; 5] = (&bytes[11..16]).try_into().expect("This slice is obviously 5 elements long.");
 
         // ---------- splitting and validation ----------
         const STANDARD_INES_HEADER: [u8; 4] = [b'N', b'E', b'S', 0x1A];
@@ -167,11 +147,13 @@ impl INesFileHeader {
         // todo: change these into proper structs using bitfields
         // flags 6
         use NametableArrangement as NA;
-        let nametable_arrangement = if flags6.nth_flag(0) { NA::Vertical } else { NA::Horizontal };
+        let nametable_arrangement = if flags6.nth_bit::<u8>(0) == 0 { NA::Vertical } else { NA::Horizontal };
         let contains_battery_ram = flags6.nth_flag(1);
         let trainer_present = flags6.nth_flag(2);
         let alternative_nametable_layout = flags6.nth_flag(3);
         let mapper_lower_nibble = flags6 >> 4;
+
+        println!("NT arrangement read by a manual test: {:?}", nametable_arrangement);
 
         // flags 7
         let vs_unisystem = flags7.nth_flag(0);
@@ -183,14 +165,15 @@ impl INesFileHeader {
         let mapper_number = mapper_upper_nibble | mapper_lower_nibble;
 
         Ok(INesFileHeader {
-            prg_rom_size: *prg_rom_size,
-            chr_rom_size: *chr_rom_size,
+            prg_rom_size: bytes[4],
+            chr_rom_size: bytes[5],
 
             // flags 6
             nametable_arrangement,
             contains_battery_ram,
             trainer_present,
             alternative_nametable_layout,
+            flags6: flags6_bitfield,
             
             // flags 7
             vs_unisystem,
@@ -213,3 +196,30 @@ impl INesFileHeader {
     }
 }
 
+#[modular_bitfield::bitfield]
+#[repr(u8)]
+#[derive(Debug)]
+pub struct Flags6 {
+    pub nametable_arrangement: NametableArrangement,
+    pub contains_battery_ram: bool,
+    pub trainer_present: bool,
+    pub alternative_nametable_layout: bool,
+    mapper_lower_nibble: B4,
+}
+
+#[derive(Debug, Specifier, Clone, Copy, PartialEq, Eq)]
+#[bits = 1]
+pub enum NametableArrangement {
+    Vertical = 0,
+    Horizontal = 1,
+}
+
+#[modular_bitfield::bitfield]
+#[repr(u8)]
+#[derive(Debug)]
+struct Flags7 {
+    vs_unisystem: bool,
+    playchoice_10: bool,
+    nes20_format: B2,
+    mapper_upper_nibble: B4,
+}

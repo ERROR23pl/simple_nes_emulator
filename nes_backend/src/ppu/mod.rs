@@ -91,12 +91,12 @@ impl PPU {
             // todo: nametables can be also mapped by a cartridge
             0x2000..0x3000 => match cartridge.mirroring() {
                 // the mirroring is done by a brute force method even though there are more clever solutions.
-                Mirroring::Horizontal => match address & 0x0FFF {
+                Mirroring::Vertical => match address & 0x0FFF {
                     0x0000..0x0400 | 0x0800..0x0C00 => self.name_table[0][(address & 0x03FF) as usize],
                     0x0400..0x0800 | 0x0C00..0x1000 => self.name_table[1][(address & 0x03FF) as usize],
                     0x1000.. => unreachable!("after masking the address with 0x0FFF it can't be >= 0x1000."),
                 },
-                Mirroring::Vertical => match address & 0x0FFF {
+                Mirroring::Horizontal => match address & 0x0FFF {
                     0x0000..0x0800 => self.name_table[0][(address & 0x03FF) as usize],
                     0x0800..0x1000 => self.name_table[1][(address & 0x03FF) as usize],
                     0x1000.. => unreachable!("after masking the address with 0x0FFF it can't be >= 0x1000."),
@@ -146,12 +146,12 @@ impl PPU {
             // nametables
             0x2000..0x3000 => match cartridge.mirroring() {
                 // the mirroring is done by a brute force method even thoug there are more clever solutions.
-                Mirroring::Horizontal => match address & 0x0FFF {
+                Mirroring::Vertical => match address & 0x0FFF {
                     0x0000..0x0400 | 0x0800..0x0C00 => { self.name_table[0][(address & 0x03FF) as usize] = data },
                     0x0400..0x0800 | 0x0C00..0x1000 => { self.name_table[1][(address & 0x03FF) as usize] = data },
                     0x1000.. => unreachable!("after masking the address with 0x0FFF it can't be >= 0x1000."),
                 },
-                Mirroring::Vertical => match address & 0x0FFF {
+                Mirroring::Horizontal => match address & 0x0FFF {
                     0x0000..0x0800 => { self.name_table[0][(address & 0x03FF) as usize] = data },
                     0x0800..0x1000 => { self.name_table[1][(address & 0x03FF) as usize] = data },
                     0x1000.. => unreachable!("after masking the address with 0x0FFF it can't be >= 0x1000."),

@@ -763,7 +763,7 @@ impl CPU {
             // ---------- OTHER ----------
             IT::NOP => { matches!(self.opcode, 0x1C | 0x3C | 0x5C | 0x7C | 0xDC | 0xFC) },
             IT::INVALID => {
-                error!("executed an invalid operation.");
+                warn!("executed an invalid operation.");
                 false
             },           
         }

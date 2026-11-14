@@ -14,7 +14,7 @@ pub struct Cartridge {
     mapper: Box<dyn Mapper>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub enum Mirroring {
     #[default]
     Horizontal,
@@ -36,10 +36,14 @@ impl TryFrom<&INesFile> for Cartridge {
     type Error = UnimplementedMapperError;
 
     fn try_from(file: &INesFile) -> Result<Self, Self::Error> {
+        println!("---------------------------");
+        println!("mirroring by bitfield: {:?}", Mirroring::from(file.header().flags6().nametable_arrangement()));
+        println!("mirroring by manual: {:?}", Mirroring::from(*file.header().nametable_arrangement()));
+
         Ok(Cartridge {
             prg_memory: file.prg_rom_data().clone(),
             chr_memory: file.chr_rom_data().clone(),
-            mirroring: file.header().nametable_arrangement().into(),
+            mirroring: file.header().flags6().nametable_arrangement().into(),
             mapper: match file.header().mapper_number() {
                 0 => Ok(Box::new(Mapper000::new(file.prg_rom_data().len() > file_loading::PRG_BANK_SIZE))),
                 n => Err(UnimplementedMapperError(n)),
@@ -71,8 +75,8 @@ impl Cartridge {
     }
 }
 
-impl From<&NametableArrangement> for Mirroring {
-    fn from(value: &NametableArrangement) -> Self {
+impl From<NametableArrangement> for Mirroring {
+    fn from(value: NametableArrangement) -> Self {
         use NametableArrangement as NA;
         match value {
             NA::Horizontal => Mirroring::Vertical,

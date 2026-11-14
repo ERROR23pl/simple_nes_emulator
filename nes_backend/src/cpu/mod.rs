@@ -1,7 +1,9 @@
 // submodules declaration
 mod instructions;
 mod addressing;
+mod ppu_communication;
 pub mod disassembler;
+pub mod debug;
 
 // crate imports
 use crate::{
@@ -15,21 +17,11 @@ use instructions::*;
 
 // 3rd party imports
 use modular_bitfield::bitfield;
-use log::{error, warn};
+use log::{warn};
 
 // constants
 pub const CPU_RAM_SIZE: usize = 2 * KB;
 pub const STACK_BASE: u16 = 0x0100;
-
-pub const CONTROL: u16 = 0;
-pub const MASK: u16 = 1;
-pub const STATUS: u16 = 2;
-pub const OAM_ADDRESS: u16 = 3;
-pub const OAM_DATA: u16 = 4;
-pub const SCROLL: u16 = 5;
-pub const PPU_ADDRESS: u16 = 6;
-pub const PPU_DATA: u16 = 7;
-
 
 #[derive(derive_getters::Getters)]
 pub struct CPU {
@@ -97,180 +89,8 @@ impl CPU {
  
 }
 
-
+// * instruction execution
 impl CPU {
-    fn set_flag(&mut self, flag: StatusFlag, value: bool) {
-        if value {
-            self.status |= flag as u8;
-        } else {
-            self.status &= !(flag as u8);
-        }
-    }
-
-    pub fn get_flag(&self, flag: StatusFlag) -> bool {
-        self.status & (flag as u8) != 0
-    }
-
-    pub fn write(&mut self, address: u16, data: u8) {
-        match address {
-            0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
-            0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
-            0x4014 => {
-                self.dma_page = data;
-                println!("page: {}", data);
-                self.dma_transfer = true;
-            }
-            0x4016 | 0x4017 => {
-                let which_controler = (address & 0x0001) as usize;
-                self.controlers_state[which_controler] = self.controlers[which_controler]
-            },
-            0x4020..=0xFFFF => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
-            _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
-        }
-    }
-    
-    // reading ppu control registers can alter the state of the PPU
-    // thus `read_only` flag is passed for debugging purposes
-    // if one would want to read from them without modifying the state
-    pub fn read(&mut self, address: u16, read_only: bool) -> u8 {
-        // source: https://www.nesdev.org/wiki/CPU_memory_map
-        match address {
-            0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
-            0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
-            0x4016 | 0x4017 => {
-                let which_controler = (address & 0x0001) as usize;
-                let most_significant_bit = (self.controlers_state[which_controler] & 0x80) >> 7;
-
-                self.controlers_state[which_controler] <<= 1;
-
-                most_significant_bit
-            }
-            
-            // 0x
-            0x4020..=0xFFFF => self.cartridge.cpu_read(address),
-
-            _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
-        }
-    }
-    
-    fn cpu_read_from_ppu(&mut self, address: u16, read_only: bool) -> u8 {
-        let ppu_controls = &mut self.ppu.ppu_controls;
-        match address {
-            CONTROL => { error!("Reading from PPU_CONTROL register is not allowed. Returning dummy `0`."); 0 },
-
-            MASK => { error!("Reading from PPU_MASK register is not allowed. Returning dummy `0`."); 0 },
-
-            STATUS => {
-                let retrieved_data = (u8::from(ppu_controls.status) & 0xE0) | (ppu_controls.data_buffer & 0x1F);
-                
-                if !read_only {
-                    ppu_controls.status.set_vertical_blank(false);
-                    ppu_controls.writing_part = WritingAddressPart::default();
-                }
-                
-                retrieved_data
-            },
-
-            OAM_ADDRESS => {
-                warn!("Reading OAM address, it doesn't make sense. Returned actuall value");
-                self.ppu.oam_address
-            },
-
-            OAM_DATA => {
-                self.ppu.oam[self.ppu.oam_address]
-            },
-
-            SCROLL => { warn!("unimplemented. returning dummy 0 value."); 0 },
-            
-            PPU_ADDRESS => { error!("Reading from PPU_ADDRESS register is not allowed. Returning dummy `0`."); 0 },
-            
-            PPU_DATA => {
-                let delayed_data = ppu_controls.data_buffer;
-                let current_address: u16 = ppu_controls.vram_address.into();
-                
-                let new_data_buffer = self.ppu.read(current_address, &self.cartridge);
-                let ppu_controls = &mut self.ppu.ppu_controls; // we needed to drop this value for a second so that Rust doesn't complain
-                ppu_controls.data_buffer = new_data_buffer;
-                
-                ppu_controls.vram_address.increment(
-                    if ppu_controls.control.increment_mode() { 32 } else { 1 }
-                );
-
-                if u16::from(ppu_controls.vram_address) >= 0x3F00 { // 0x3F00 = start of palette memory
-                    new_data_buffer
-                } else {
-                    delayed_data
-                }
-            },
-
-            8.. => unreachable!("This function should only be called with mirroring from either"),
-        }
-    }
-    
-    pub fn cpu_write_to_ppu(&mut self, address: u16, data: u8) {
-        let ppu_controls = &mut self.ppu.ppu_controls;
-        match address {
-            CONTROL => {
-                ppu_controls.control = data.into();
-                ppu_controls.tram_address.set_nametable_x(ppu_controls.control.nametable_x());
-                ppu_controls.tram_address.set_nametable_y(ppu_controls.control.nametable_y());
-            },
-            
-            MASK => { ppu_controls.mask = data.into() },
-
-            STATUS => error!("Attempted to write {:02X} into status register.", data),
-
-            OAM_ADDRESS => { self.ppu.oam_address = data },
-
-            OAM_DATA => { self.ppu.oam[self.ppu.oam_address] = data },
-
-            SCROLL => {
-                use WritingAddressPart as WAP;
-                match ppu_controls.writing_part {
-                    WAP::High => {
-                        ppu_controls.fine_x = data & 0x07;
-                        ppu_controls.tram_address.set_coarse_x(data >> 3);
-                    },
-                    WAP::Low => {
-                        ppu_controls.tram_address.set_fine_y(data & 0x07);
-                        ppu_controls.tram_address.set_coarse_y(data >> 3);
-                    },
-                }
-
-                ppu_controls.address_part_switch();
-            },
-
-            PPU_ADDRESS => {
-                use WritingAddressPart as WAP;
-                match ppu_controls.writing_part {
-                    WAP::High => {
-                        ppu_controls.tram_address = (
-                            (u16::from(ppu_controls.tram_address) & 0x00FF) | (((data as u16) & 0x3F) << 8)
-                        ).into();
-                        // ppu_controls.tram_address = PPULoopy::from_bytes([data & 0x3F, ppu_controls.tram_address.into_bytes()[0]]);
-                    },
-                    WAP::Low => {
-                        ppu_controls.tram_address = (
-                            (u16::from(ppu_controls.tram_address) & 0xFF00) | (data as u16)
-                        ).into();
-                        ppu_controls.vram_address = ppu_controls.tram_address;
-                    },
-                }
-                
-                ppu_controls.address_part_switch();
-            },
-
-            PPU_DATA => {
-                self.ppu.write(self.ppu.ppu_controls.vram_address.into(), data, &mut self.cartridge);
-                self.ppu.ppu_controls.vram_address.increment(
-                    if self.ppu.ppu_controls.control.increment_mode() { 32 } else { 1 }
-                );
-            },
-
-            8.. => unreachable!("This function should only be called with mirroring."),
-        }
-    }
-    
     pub fn clock(&mut self) {
         if self.cycles == 0 {
             self.opcode = self.read(self.program_counter, false);
@@ -292,7 +112,10 @@ impl CPU {
         
         page_boundry_crossed && operation_needs_cycle
     }
+}
 
+// * hardware operations
+impl CPU {
     pub fn reset(&mut self) {
         // Get address to set program counter to and set it
         self.addr_abs = 0xFFFC;
@@ -347,7 +170,66 @@ impl CPU {
         self.interrupt::<0xFFFA>();
         self.cycles = 8;
     }
+}
+
+// * memory management
+impl CPU {
+    pub fn write(&mut self, address: u16, data: u8) {
+        match address {
+            0x0000..0x2000 => { self.ram[(address & 0x07FF) as usize] = data },
+            0x2000..0x4000 => { self.cpu_write_to_ppu(address & 0x0007, data) },
+            0x4014 => {
+                self.dma_page = data;
+                self.dma_transfer = true;
+            }
+            0x4016 | 0x4017 => {
+                let which_controler = (address & 0x0001) as usize;
+                self.controlers_state[which_controler] = self.controlers[which_controler]
+            },
+            0x4020..=0xFFFF => { self.cartridge.cpu_write(address, data); } // todo: is this correct?
+            _ => { warn!("attempted to write to memory that wasn't yet implemented ({:04X}). Not doing anything.", address) },
+        }
+    }
     
+    // reading ppu control registers can alter the state of the PPU
+    // thus `read_only` flag is passed for debugging purposes
+    // if one would want to read from them without modifying the state
+    pub fn read(&mut self, address: u16, read_only: bool) -> u8 {
+        // source: https://www.nesdev.org/wiki/CPU_memory_map
+        match address {
+            0x0000..0x2000 => self.ram[(address & 0x07FF) as usize],
+            0x2000..0x4000 => self.cpu_read_from_ppu(address & 0x0007, read_only),
+            0x4016 | 0x4017 => {
+                let which_controler = (address & 0x0001) as usize;
+                let most_significant_bit = (self.controlers_state[which_controler] & 0x80) >> 7;
+
+                self.controlers_state[which_controler] <<= 1;
+
+                most_significant_bit
+            }
+            
+            // 0x
+            0x4020..=0xFFFF => self.cartridge.cpu_read(address),
+
+            _ => { warn!("Attempted to read from memory that wasn't yet implemented ({:04X}). Returning 0.", address); 0 },
+        }
+    }
+}
+
+// * helper functions for easier manipulation of CPU state
+impl CPU {
+    fn set_flag(&mut self, flag: StatusFlag, value: bool) {
+        if value {
+            self.status |= flag as u8;
+        } else {
+            self.status &= !(flag as u8);
+        }
+    }
+
+    pub fn get_flag(&self, flag: StatusFlag) -> bool {
+        self.status & (flag as u8) != 0
+    }
+   
     fn push_to_stack(&mut self, value: u8) {
         self.write(STACK_BASE + self.stack_pointer as u16, value);
         self.stack_pointer -= 1;
@@ -375,7 +257,7 @@ pub enum StatusFlag {
     Negative = 1 << 7,
 }
 
-// * helper functions
+// * even more helper functions
 impl CPU {
     fn set_flags(&mut self, flags: &[StatusFlag], value: bool) {
         let combined_flags = flags.iter().fold(0u8, |acc, x| acc | *x as u8);
@@ -412,28 +294,6 @@ impl CPU {
         let high_byte = self.read(self.addr_abs + 1, false);
 
         glue_u8s(high_byte, low_byte)
-    }
-}
-
-// * debugging
-impl CPU {
-    pub fn get_ram(&self) -> &[u8; CPU_RAM_SIZE] {
-        &self.ram
-    }
-
-    pub fn get_mut_ram(&mut self) -> &mut [u8; CPU_RAM_SIZE] {
-        &mut self.ram
-    }
-
-    pub fn render_debug_pattern_table<P: PixelBuffer>(&mut self, screen: &mut P, pattern_table_side: PatternTable, pallete_id: u8) {
-        self.ppu.render_debug_pattern_table(screen, pattern_table_side, pallete_id, &self.cartridge);
-    }
-
-    pub fn clock_until_next_instruction(&mut self) {
-        self.clock();
-        while self.cycles != 0 {
-            self.clock();
-        }
     }
 }
 
