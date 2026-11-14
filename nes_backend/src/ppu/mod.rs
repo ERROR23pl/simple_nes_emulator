@@ -5,12 +5,12 @@ mod oam;
 pub use oam::*;
 use crate::cartridge::{self, Cartridge, Mirroring};
 use crate::ppu::ppu_controls::PPUControlRegisters;
-use crate::rendering::{NesColor, PAL_COLOR, PatternTable, PixelBuffer};
+use crate::rendering::{NesColor, PatternTable, PixelBuffer};
 
 use itertools::iproduct;
 use log::error;
 
-pub struct PPU<P: PixelBuffer> {
+pub struct PPU {
     name_table: [[u8; 1024]; 2], // NES stores two 1KB name tables (vram)
     palette: [u8; 32],
     pub ppu_controls: PPUControlRegisters,
@@ -41,15 +41,10 @@ pub struct PPU<P: PixelBuffer> {
     sprite_shifter_hi: [u8; 8],
     sprite_zero_hit_possible: bool,
     sprite_zero_being_rendered: bool,
-
-    // rendering tool to render emulate sending a signal to TV.
-    // It's generic to allow multiple implementations. 
-    pub screen: P,
-    pub pattern_table_screen: P,
 }
 
-impl<P: PixelBuffer> PPU<P> {
-    pub fn new(screen_buffer: P, pattern_table_screen: P) -> Self {
+impl PPU {
+    pub fn new() -> Self {
         PPU {
             name_table: [[0; 1024]; 2],
             palette: [0; 32],
@@ -77,9 +72,6 @@ impl<P: PixelBuffer> PPU<P> {
             sprite_shifter_hi: [0; 8],
             sprite_zero_hit_possible: false,
             sprite_zero_being_rendered: false,
-
-            screen: screen_buffer,
-            pattern_table_screen,
         }
     }
     
@@ -221,13 +213,26 @@ impl<P: PixelBuffer> PPU<P> {
 }
 
 // * debug functions
-impl<P: PixelBuffer> PPU<P> {
-    fn set_pixel_pattern_table(&mut self, pattern_table: PatternTable, x: usize, y: usize, color: NesColor) {
+impl PPU {
+    fn set_pixel_pattern_table<P: PixelBuffer>(
+        &mut self,
+        screen: &mut P,
+        pattern_table: PatternTable,
+        x: usize,
+        y: usize,
+        color: NesColor
+    ) {
         let pattern_shift = (pattern_table as usize) * (256 / 2);
-        self.pattern_table_screen.set(x + pattern_shift + y * 256, color);
+        screen.set(x + pattern_shift + y * 256, color);
     }
 
-    pub fn render_debug_pattern_table(&mut self, pattern_table_side: PatternTable, pallete_id: u8, cartridge: &Cartridge) {
+    pub fn render_debug_pattern_table<P: PixelBuffer>(
+        &mut self,
+        screen: &mut P,
+        pattern_table_side: PatternTable,
+        pallete_id: u8,
+        cartridge: &Cartridge
+    ) {
         // locate the tile in the pattern table
         const SINGLE_PATTERN_TABLE_SIZE: u16 = 0x1000;
         for (tile_y, tile_x) in iproduct!(0..16, 0..16) {
@@ -246,6 +251,7 @@ impl<P: PixelBuffer> PPU<P> {
                     tile_msb >>= 1;
 
                     self.set_pixel_pattern_table(
+                        screen,
                         pattern_table_side,
                         (tile_x * 8 + (7 - col)) as usize, // `7 - col` since we read it in reverse order
                         (tile_y * 8 + row) as usize,

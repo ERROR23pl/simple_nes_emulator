@@ -19,13 +19,13 @@ pub struct App {
     recent_roms: utils::FixedSizeQueue<PathBuf, 5>,
 
     #[serde(skip)]
-    nes_screen: Option<Screen>,
+    nes_screen: Screen,
 
     #[serde(skip)]
-    pattern_screen: Option<Screen>,
+    pattern_screen: Screen,
 
     #[serde(skip)]
-    nes: Option<NES<BasicPixelBuffer>>,
+    nes: Option<NES>,
     
     // todo: instructions should be part of NES
     #[serde(skip)]
@@ -41,8 +41,8 @@ pub struct App {
 impl App {
     pub fn default_with_context(cc: &eframe::CreationContext<'_>) -> Self {
         Self {
-            nes_screen: Some(Screen::new(&cc.egui_ctx, "nes screen", 256, 240)),
-            pattern_screen: Some(Screen::new(&cc.egui_ctx, "pattern screen", 256, 128)),
+            nes_screen: Screen::new(&cc.egui_ctx, "nes screen", 256, 240),
+            pattern_screen: Screen::new(&cc.egui_ctx, "pattern screen", 256, 128),
             nes: None,
             instructions: None,
             recent_roms: utils::FixedSizeQueue::default(),
@@ -77,9 +77,7 @@ impl eframe::App for App {
         //     }
         // });
         
-        if self.nes.is_some() {
-            self.update_emulator();
-        }
+        self.update_emulator();
 
         // controller input
         let mapping = &self.app_settings.controller_mapping;

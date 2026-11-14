@@ -4,8 +4,8 @@ use crate::{
 
 
 #[derive(derive_getters::Getters)]
-pub struct NES<P: PixelBuffer> {
-    pub cpu: CPU<P>,
+pub struct NES {
+    pub cpu: CPU,
 
     // DMA transfer
     dma_proper_clock_cycle_reached: bool,
@@ -19,10 +19,10 @@ pub struct NES<P: PixelBuffer> {
     frame_count: usize,
 }
 
-impl<P: PixelBuffer> NES<P> {
-    pub fn new(pixel_buffer: P, debug_pattern_screen: P, cartridge: Cartridge) -> Self {
+impl NES {
+    pub fn new(cartridge: Cartridge) -> Self {
         Self {
-            cpu: CPU::new(cartridge, PPU::new(pixel_buffer, debug_pattern_screen)),
+            cpu: CPU::new(cartridge, PPU::new()),
 
             clock_count: 0,
             frame_count: 0,
@@ -39,8 +39,8 @@ impl<P: PixelBuffer> NES<P> {
         self.clock_count = 0;
     }
 
-    pub fn clock(&mut self) {
-        self.cpu.ppu_clock();
+    pub fn clock<P: PixelBuffer>(&mut self, screen: &mut P) {
+        self.cpu.ppu_clock(screen);
         
         // PPU clock is 3x faster than CPU clock
         if self.clock_count % 3 == 0 {
@@ -80,19 +80,19 @@ impl<P: PixelBuffer> NES<P> {
     }
 }
 
-impl NES<DummyBuffer> {
-    pub fn new_no_display(cartridge: Cartridge) -> Self {
-        Self::new(DummyBuffer::default(), DummyBuffer::default(), cartridge)
-    }
-}
+// impl NES<DummyBuffer> {
+//     pub fn new_no_display(cartridge: Cartridge) -> Self {
+//         Self::new(DummyBuffer::default(), DummyBuffer::default(), cartridge)
+//     }
+// }
 
-impl<P: PixelBuffer> NES<P> {
+impl NES {
     pub fn get_mut_cpu_ram(&mut self) -> &mut [u8; CPU_RAM_SIZE] {
         self.cpu.get_mut_ram()
     }
 
-    pub fn render_debug_pattern_table(&mut self, pattern_table_side: PatternTable, pallete_id: u8) {
-        self.cpu.render_debug_pattern_table(pattern_table_side, pallete_id);
+    pub fn render_debug_pattern_table<P: PixelBuffer>(&mut self, screen: &mut P, pattern_table_side: PatternTable, pallete_id: u8) {
+        self.cpu.render_debug_pattern_table(screen, pattern_table_side, pallete_id);
     }
 
     pub fn check_frame_complete_and_toggle(&mut self) -> bool {

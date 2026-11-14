@@ -44,54 +44,64 @@ impl<T: PartialEq, const L: usize> FixedSizeQueue<T, L> {
 
 impl App {
     pub fn update_emulator(&mut self) {
-        let Some(screen) = self.nes_screen.as_mut() else {
-            return;
-        };
+        let Some(ref mut nes) = self.nes else { return; };
 
-        let nes = self.nes.as_mut().expect("I've already checked if it's Some(_) on the call site.");
+        // clock nes until the ppu finishes drawing the frame
+        while !nes.check_frame_complete_and_toggle() { nes.clock(&mut self.nes_screen.buffer) };
+        self.nes_screen.update();
 
-        match self.debug_state.running_mode {
-            RunningMode::CyclesPerFrame(speed) => {
-                for _ in 0..speed {
-                    nes.clock();
-
-                    if nes.check_frame_complete_and_toggle() {
-                        screen.update_with_pixel_buffer(&nes.cpu().ppu().screen);
-                        if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
-                            nes.render_debug_pattern_table(PatternTable::Left, self.debug_state.chosen_debug_palette);
-                            nes.render_debug_pattern_table(PatternTable::Right, self.debug_state.chosen_debug_palette);
-                            pattern_screen.update_with_pixel_buffer(&nes.cpu.ppu.pattern_table_screen);
-                        }
-                    };
-                };
-            },
-            RunningMode::StepByStep => {
-                if nes.check_frame_complete_and_toggle() {
-                    screen.update_with_pixel_buffer(&nes.cpu().ppu().screen);
-                    
-                    if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
-                        nes.render_debug_pattern_table(PatternTable::Left, self.debug_state.chosen_debug_palette);
-                        nes.render_debug_pattern_table(PatternTable::Right, self.debug_state.chosen_debug_palette);
-                        pattern_screen.update_with_pixel_buffer(&nes.cpu.ppu.pattern_table_screen);
-                    }
-                };
-            },
-            RunningMode::Normal => {
-                // clock nes until the ppu finishes drawing the frame
-                while !nes.check_frame_complete_and_toggle() { nes.clock() };
-                screen.update_with_pixel_buffer(&nes.cpu().ppu().screen);
-
-                // if we want to render pattern memory
-                if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
-                    nes.render_debug_pattern_table(PatternTable::Left, self.debug_state.chosen_debug_palette);
-                    nes.render_debug_pattern_table(PatternTable::Right, self.debug_state.chosen_debug_palette);
-                    pattern_screen.update_with_pixel_buffer(&nes.cpu.ppu.pattern_table_screen);
-                }
-            }
+        // if we want to render pattern memory
+        if self.app_settings.show.pattern_memory {
+            let pattern_buffer = &mut self.pattern_screen.buffer;
+            nes.render_debug_pattern_table(pattern_buffer, PatternTable::Left, self.debug_state.chosen_debug_palette);
+            nes.render_debug_pattern_table(pattern_buffer, PatternTable::Right, self.debug_state.chosen_debug_palette);
+            self.pattern_screen.update();
         }
+        // match self.debug_state.running_mode {
+        //     RunningMode::CyclesPerFrame(speed) => {
+        //         for _ in 0..speed {
+        //             nes.clock(&mut self.nes_screen.unwrap().buffer);
+
+        //             if nes.check_frame_complete_and_toggle() {
+        //                 screen.update();
+        //                 if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
+        //                     let pattern_buffer = &mut self.pattern_screen.unwrap().buffer;
+        //                     nes.render_debug_pattern_table(pattern_buffer, PatternTable::Left, self.debug_state.chosen_debug_palette);
+        //                     nes.render_debug_pattern_table(pattern_buffer, PatternTable::Right, self.debug_state.chosen_debug_palette);
+        //                     pattern_screen.update();
+        //                 }
+        //             };
+        //         };
+        //     },
+        //     RunningMode::StepByStep => {
+        //         if nes.check_frame_complete_and_toggle() {
+        //             screen.update();
+                    
+        //             if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
+        //                 let pattern_buffer = &mut self.pattern_screen.unwrap().buffer;
+        //                 nes.render_debug_pattern_table(pattern_buffer, PatternTable::Left, self.debug_state.chosen_debug_palette);
+        //                 nes.render_debug_pattern_table(pattern_buffer, PatternTable::Right, self.debug_state.chosen_debug_palette);
+        //                 pattern_screen.update();
+        //             }
+        //         };
+        //     },
+        //     RunningMode::Normal => {
+        //         // clock nes until the ppu finishes drawing the frame
+        //         while !nes.check_frame_complete_and_toggle() { nes.clock(&mut self.nes_screen.unwrap().buffer) };
+        //         screen.update();
+
+        //         // if we want to render pattern memory
+        //         if let (true, Some(pattern_screen)) = (self.app_settings.show.pattern_memory, self.pattern_screen.as_mut()) {
+        //             let pattern_buffer = &mut self.pattern_screen.unwrap().buffer;
+        //             nes.render_debug_pattern_table(pattern_buffer, PatternTable::Left, self.debug_state.chosen_debug_palette);
+        //             nes.render_debug_pattern_table(pattern_buffer, PatternTable::Right, self.debug_state.chosen_debug_palette);
+        //             pattern_screen.update();
+        //         }
+        //     }
+        // }
     }
 
-    pub fn load_rom(&mut self, path: &PathBuf) -> Result<NES<BasicPixelBuffer>, ROMLoadError> {
+    pub fn load_rom(&mut self, path: &PathBuf) -> Result<NES, ROMLoadError> {
         let file = INesFile::try_new_from_path(path)?;
         let cart = Cartridge::try_from(&file)?;
 
@@ -99,7 +109,7 @@ impl App {
         // todo: remove this and change the parameter to be &self instead of &mut self
         self.instructions = Some(cart.disassemble());
 
-        let nes = nes_backend::nes::NES::new(BasicPixelBuffer::new(256, 240), BasicPixelBuffer::new(256, 128), cart);
+        let nes = nes_backend::nes::NES::new(cart);
         Ok(nes)
     }
 }

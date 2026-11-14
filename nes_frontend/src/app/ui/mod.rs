@@ -75,8 +75,7 @@ impl App {
             .min_width(256.0)
             .min_height(240.0)
             .show(ctx, |ui| {
-                let Some(screen) = self.nes_screen.as_ref() else { return; };
-                ui.add(Image::new(&screen.handle)
+                ui.add(Image::new(&self.nes_screen.handle)
                     .fit_to_exact_size(ui.available_size())
                 );
             });

@@ -367,7 +367,7 @@ macro_rules! branch_if {
     };
 }
 
-impl<P: PixelBuffer> CPU<P> {
+impl CPU {
     fn fetch_data(&mut self) -> u8 {
         let instruction = INSTRUCTION_LOOKUP[self.opcode as usize];
         

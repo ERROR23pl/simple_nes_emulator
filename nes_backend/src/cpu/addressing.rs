@@ -19,7 +19,7 @@ pub enum AddressingMode {
 }
 
 // todo: remove all & 0x00FF -- they are not needed in Rust
-impl<P: PixelBuffer> CPU<P> {
+impl CPU {
     pub fn find_data(&mut self, mode: AddressingMode) -> bool {
         use AddressingMode as AM;
         match mode {

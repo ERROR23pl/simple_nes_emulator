@@ -32,7 +32,7 @@ pub const PPU_DATA: u16 = 7;
 
 
 #[derive(derive_getters::Getters)]
-pub struct CPU<P: PixelBuffer> {
+pub struct CPU {
     // actual registers on the 6502
     acc: u8,
     reg_x: u8,
@@ -44,7 +44,7 @@ pub struct CPU<P: PixelBuffer> {
     // CPU bus (on board elements controled or accessed by CPU)
     ram: [u8; CPU_RAM_SIZE],
     cartridge: Cartridge,
-    pub ppu: PPU<P>,
+    pub ppu: PPU,
     pub controlers: [u8; 2],
     controlers_state: [u8; 2],
 
@@ -60,8 +60,8 @@ pub struct CPU<P: PixelBuffer> {
     cycles: u8,
 }
 
-impl<P: PixelBuffer> CPU<P> {
-    pub fn new(cartridge: Cartridge, ppu: PPU<P>) -> Self {
+impl CPU {
+    pub fn new(cartridge: Cartridge, ppu: PPU) -> Self {
         let mut cpu = CPU {
             // actual registers on the 6502
             acc: 0,
@@ -98,7 +98,7 @@ impl<P: PixelBuffer> CPU<P> {
 }
 
 
-impl<P: PixelBuffer> CPU<P> {
+impl CPU {
     fn set_flag(&mut self, flag: StatusFlag, value: bool) {
         if value {
             self.status |= flag as u8;
@@ -358,8 +358,8 @@ impl<P: PixelBuffer> CPU<P> {
         self.read(STACK_BASE + self.stack_pointer as u16, false)
     }
 
-    pub fn ppu_clock(&mut self) {
-        self.ppu.clock(&mut self.cartridge);
+    pub fn ppu_clock<P: PixelBuffer>(&mut self, screen: &mut P) {
+        self.ppu.clock(screen, &mut self.cartridge);
     }
 }
 
@@ -376,7 +376,7 @@ pub enum StatusFlag {
 }
 
 // * helper functions
-impl<P: PixelBuffer> CPU<P> {
+impl CPU {
     fn set_flags(&mut self, flags: &[StatusFlag], value: bool) {
         let combined_flags = flags.iter().fold(0u8, |acc, x| acc | *x as u8);
 
@@ -416,7 +416,7 @@ impl<P: PixelBuffer> CPU<P> {
 }
 
 // * debugging
-impl<P: PixelBuffer> CPU<P> {
+impl CPU {
     pub fn get_ram(&self) -> &[u8; CPU_RAM_SIZE] {
         &self.ram
     }
@@ -425,8 +425,8 @@ impl<P: PixelBuffer> CPU<P> {
         &mut self.ram
     }
 
-    pub fn render_debug_pattern_table(&mut self, pattern_table_side: PatternTable, pallete_id: u8) {
-        self.ppu.render_debug_pattern_table(pattern_table_side, pallete_id, &self.cartridge);
+    pub fn render_debug_pattern_table<P: PixelBuffer>(&mut self, screen: &mut P, pattern_table_side: PatternTable, pallete_id: u8) {
+        self.ppu.render_debug_pattern_table(screen, pattern_table_side, pallete_id, &self.cartridge);
     }
 
     pub fn clock_until_next_instruction(&mut self) {

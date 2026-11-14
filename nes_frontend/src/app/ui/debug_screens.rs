@@ -1,7 +1,7 @@
 use egui::{Color32, DragValue, FontId, Image, Pos2, Rect, Rgba, RichText, Stroke, Ui, Vec2};
-use nes_backend::{cpu::{CPU_RAM_SIZE, StatusFlag}, rendering::PAL_COLOR};
+use nes_backend::{cpu::{CPU_RAM_SIZE, StatusFlag}};
 
-use crate::app::RunningMode;
+use crate::app::{RunningMode, utils::display::PAL_COLOR};
 
 impl crate::App {
     pub fn debug_windows(&mut self, ctx: &egui::Context) {
@@ -45,8 +45,7 @@ impl crate::App {
                 ui.horizontal(|ui| generate_palletes(0, 3, ui));
                 ui.horizontal(|ui| generate_palletes(4, 7, ui));
                 
-                let Some(screen) = self.pattern_screen.as_ref() else { return; };
-                ui.add(Image::new(&screen.handle)
+                ui.add(Image::new(&self.pattern_screen.handle)
                     .fit_to_exact_size(ui.available_size())
                 );
             });
@@ -110,16 +109,16 @@ impl crate::App {
                     },
                     RunningMode::StepByStep => {
                         if ui.button("clock NES").clicked() {
-                            nes.clock();
+                            nes.clock(&mut self.nes_screen.buffer);
                         }
 
                         if ui.button("clock CPU").clicked() {
-                            for _ in 0..3 { nes.clock() };
+                            for _ in 0..3 { nes.clock(&mut self.nes_screen.buffer) };
                         }
                         
                         if ui.button("next instruction").clicked() {
-                            while nes.cpu().cycles() != 0 { nes.clock() };
-                            for _ in 0..3 { nes.clock() };
+                            while nes.cpu().cycles() != 0 { nes.clock(&mut self.nes_screen.buffer) };
+                            for _ in 0..3 { nes.clock(&mut self.nes_screen.buffer) };
                         }
                         
                         if ui.button("run emulation").clicked() {

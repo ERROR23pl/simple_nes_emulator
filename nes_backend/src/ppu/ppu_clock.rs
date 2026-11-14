@@ -2,8 +2,8 @@ use crate::{
     bit_operations::BitManipulation, cartridge::Cartridge, ppu::{OamEntry, PPU, ppu_controls::PPUControlRegisters}, rendering::PixelBuffer
 };
 
-impl<P: PixelBuffer> PPU<P> {
-    pub fn clock(&mut self, cartridge: &mut Cartridge) {
+impl PPU {
+    pub fn clock<P: PixelBuffer>(&mut self, screen: &mut P, cartridge: &mut Cartridge) {
         const CYCLE_NUMBER: u16 = 341;
         const SCANLINE_NUMBER: i16 = 261;
 
@@ -475,7 +475,7 @@ impl<P: PixelBuffer> PPU<P> {
             
             // Now we have a final pixel colour, and a palette for this cycle
             // of the current scanline. Let's at long last, draw that ^&%*er :P
-            self.screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
+            screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
         }    
 
         // Advance renderer - it never stops, it's relentless
