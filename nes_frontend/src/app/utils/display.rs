@@ -18,7 +18,8 @@ impl Screen {
         let byte_buffer: Vec<u8> = vec![0; width * height * 3];
         let image = ColorImage::from_rgb([width, height], &byte_buffer);
         let image_data = ImageData::Color(Arc::new(image));
-        let handle = ctx.load_texture(name, image_data, TextureOptions::default());
+        // let handle = ctx.load_texture(name, image_data, TextureOptions::default());
+        let handle = ctx.load_texture(name, image_data, TextureOptions::default().with_mipmap_mode(Some(egui::TextureFilter::Nearest)));
         
         Screen { handle, buffer: BasicPixelBuffer::new(width, height) }
     }

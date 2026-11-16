@@ -70,7 +70,7 @@ impl App {
     
     fn nes_display(&mut self, ctx: &egui::Context) {
         egui::Window::new("NES display")
-            .resizable(false)
+            .resizable(true)
             .id("nes_window".into())
             .min_width(256.0)
             .min_height(240.0)

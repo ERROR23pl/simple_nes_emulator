@@ -259,7 +259,7 @@ impl crate::App {
             });
     }   
 
-    pub fn controller_input(&self, ctx: &egui::Context) {
+    pub fn controller_debug_ui(&self, ctx: &egui::Context) {
         egui::Window::new("controller_debug").show(ctx, |ui| {
             if let Some(ref nes) = self.nes {
                 ui.label(format!("instant: {:?}", nes.cpu.controlers()));
@@ -297,7 +297,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state.up),
+                button_color(self.debug_state.controller_state[0].up),
             );
 
             // Down
@@ -307,7 +307,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state.down),
+                button_color(self.debug_state.controller_state[0].down),
             );
 
             // Left
@@ -317,7 +317,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state.left),
+                button_color(self.debug_state.controller_state[0].left),
             );
 
             // Right
@@ -327,7 +327,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state.right),
+                button_color(self.debug_state.controller_state[0].right),
             );
 
             // =========================
@@ -349,13 +349,13 @@ impl crate::App {
             painter.rect_filled(
                 select_rect,
                 4.0,
-                button_color(self.debug_state.controller_state.select),
+                button_color(self.debug_state.controller_state[0].select),
             );
 
             painter.rect_filled(
                 start_rect,
                 4.0,
-                button_color(self.debug_state.controller_state.start),
+                button_color(self.debug_state.controller_state[0].start),
             );
 
             // =========================
@@ -367,13 +367,13 @@ impl crate::App {
             painter.circle_filled(
                 Pos2::new(button_center.x - 25.0, button_center.y),
                 18.0,
-                button_color(self.debug_state.controller_state.b),
+                button_color(self.debug_state.controller_state[0].b),
             );
 
             painter.circle_filled(
                 Pos2::new(button_center.x + 25.0, button_center.y),
                 18.0,
-                button_color(self.debug_state.controller_state.a),
+                button_color(self.debug_state.controller_state[0].a),
             );
 
             // Optional outlines
