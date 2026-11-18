@@ -46,6 +46,16 @@ pub fn get_low_byte(number: u16) -> u8 {
     (number & 0x00FF) as u8
 }
 
+/// performs a "mirror" flip of the byte so that
+/// every bit on a position `x` ends up on position `7-x`.
+pub fn flip_byte(b: u8) -> u8 {
+    let b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+    let b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+    let b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+
+    b
+}
+
 
 pub fn mask(number: u8, upper: u8, lower: u8) -> u8 {
     let number_of_ones = (upper - lower) + 1;
@@ -56,6 +66,8 @@ pub fn mask(number: u8, upper: u8, lower: u8) -> u8 {
 
     masked_number >> lower
 }
+
+
 
 #[cfg(test)]
 mod test {

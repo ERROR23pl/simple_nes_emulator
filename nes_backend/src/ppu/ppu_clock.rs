@@ -1,5 +1,5 @@
 use crate::{
-    bit_operations::BitManipulation, cartridge::Cartridge, ppu::{OamEntry, PPU, ppu_controls::PPUControlRegisters}, rendering::PixelBuffer
+    bit_operations::*, cartridge::Cartridge, ppu::{OamEntry, PPU, RenderingHelpers, ppu_controls::PPUControlRegisters}, rendering::PixelBuffer
 };
 
 impl PPU {
@@ -13,24 +13,24 @@ impl PPU {
         // to be output.
         
         // "Odd Frame" cycle skip
-        if self.scanline == 0 && self.cycle == 0 {
-            self.cycle = 1;
+        if self.helpers.scanline == 0 && self.helpers.cycle == 0 {
+            self.helpers.cycle = 1;
         }
         
         // ---------- background rendering ----------
-        match (self.scanline, self.cycle) {
+        match (self.helpers.scanline, self.helpers.cycle) {
             // Effectively start of new frame, so clear vertical blank flag
             (-1, 1) => { 
                 self.ppu_controls.status.set_vertical_blank(false);
                 self.ppu_controls.status.set_sprite_zero_hit(false);
                 self.ppu_controls.status.set_sprite_overflow(false);
                 
-                self.sprite_shifter_lo = [0; 8];
-                self.sprite_shifter_hi = [0; 8];
+                self.helpers.sprite_shifter_lo = [0; 8];
+                self.helpers.sprite_shifter_hi = [0; 8];
             },
 
             (-1..240, 2..258 | 321..338) => {
-                self.update_shifters();
+                self.helpers.update_shifters(&self.ppu_controls, &mut self.sprite_scanline);
                 
                 // In these cycles we are collecting and working with visible data
                 // The "shifters" have been preloaded by the end of the previous
@@ -41,15 +41,15 @@ impl PPU {
                 // Fortunately, for background rendering, we go through a fairly
                 // repeatable sequence of events, every 2 clock cycles.
                 const NAMETABLE_MEMORY_OFFSET: u16 = 0x2000;
-                match (self.cycle - 1) % 8 {
+                match (self.helpers.cycle - 1) % 8 {
                     0 => {
                         // Load the current background tile pattern and attributes into the "shifter"
-                        self.load_background_shifters();
+                        self.helpers.load_background_shifters();
 
                         // Fetch the next background tile ID
                         // "(vram_addr.reg & 0x0FFF)" : Mask to 12 bits that are relevant
                         // "| 0x2000"                 : Offset into nametable space on PPU address bus
-                        self.bg_next_tile_id = self.read(
+                        self.helpers.bg_next_tile_id = self.read(
                             0x2000 + (u16::from(self.ppu_controls.vram_address) & 0x0FFF),
                             cartridge
                         );
@@ -117,7 +117,7 @@ impl PPU {
                         const ATTRIBUTE_MEMORY_OFFSET: u16 = 32 * 30;
                         let (_, nametable_y, nametable_x, coarse_y, coarse_x) = &self.ppu_controls.vram_address.dissolve_u16();
                         
-                        self.bg_next_tile_attrib = self.read(
+                        self.helpers.bg_next_tile_attrib = self.read(
                             NAMETABLE_MEMORY_OFFSET +
                             ATTRIBUTE_MEMORY_OFFSET + (
                                 (nametable_y << 11) | (nametable_x << 10) | ((coarse_y >> 2) << 3) | (coarse_x >> 2)
@@ -152,7 +152,7 @@ impl PPU {
                         let top = coarse_y % 4 < 2;
                         let left = coarse_x % 4 < 2;
 
-                        self.bg_next_tile_attrib >>= match (top, left) {
+                        self.helpers.bg_next_tile_attrib >>= match (top, left) {
                             // TL, top-left
                             (true, true) => 0,
                             // TR, top-right
@@ -164,7 +164,7 @@ impl PPU {
                         };
 
                         // only interested in last 2 bits                        
-                        self.bg_next_tile_attrib &= 0x03;
+                        self.helpers.bg_next_tile_attrib &= 0x03;
                         
                         // Ultimately we want the bottom two bits of our attribute word to be the
                         // palette selected. So shift as required...
@@ -194,9 +194,9 @@ impl PPU {
                         //                                         vertical scroll offset
                         // "+ 0"                                 : Mental clarity for plane offset
                         // Note: No PPU address bus offset required as it starts at 0x0000
-                        self.bg_next_tile_lsb = self.read(
+                        self.helpers.bg_next_tile_lsb = self.read(
                             ((self.ppu_controls.control.pattern_background() as u16) << 12) +
-                            ((self.bg_next_tile_id as u16) << 4) +
+                            ((self.helpers.bg_next_tile_id as u16) << 4) +
                             (self.ppu_controls.vram_address.fine_y() as u16),
                             cartridge
                         );
@@ -205,9 +205,9 @@ impl PPU {
                     6 => {
                         // Fetch the next background tile MSB bit plane from the pattern memory
                         // This is the same as above, but has a +8 offset to select the next bit plane
-                        self.bg_next_tile_msb = self.read(
+                        self.helpers.bg_next_tile_msb = self.read(
                             ((self.ppu_controls.control.pattern_background() as u16) << 12) +
-                            ((self.bg_next_tile_id as u16) << 4) +
+                            ((self.helpers.bg_next_tile_id as u16) << 4) +
                             (self.ppu_controls.vram_address.fine_y() as u16) + 8,
                             cartridge
                         );
@@ -225,19 +225,19 @@ impl PPU {
                     8.. => unreachable!("Any number modulo 8 can't be bigger than 8"),
                 }
 
-                if self.cycle == 256 {
+                if self.helpers.cycle == 256 {
                     self.ppu_controls.increment_scroll_y();
                 }
 
-                if self.cycle == 257 {
-                    self.load_background_shifters();
+                if self.helpers.cycle == 257 {
+                    self.helpers.load_background_shifters();
                     self.ppu_controls.transfer_address_x();
                 }
             },
 
             // Superfluous reads of tile id at end of scanline
             (-1..240, 338 | 340) => {
-                self.bg_next_tile_id = self.read(0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF), cartridge);
+                self.helpers.bg_next_tile_id = self.read(0x2000 | (u16::from(self.ppu_controls.vram_address) & 0x0FFF), cartridge);
             },
 
             (-1, 280..305) => {
@@ -263,7 +263,7 @@ impl PPU {
                 // perform operations with the PPU knowing it wont
                 // produce visible artefacts
                 if self.ppu_controls.control.enable_nmi() {
-                    self.nmi = true;
+                    self.helpers.nmi = true;
                 }
             },
 
@@ -278,23 +278,23 @@ impl PPU {
         
 
         // ---------- background rendering ----------
-        match (self.scanline, self.cycle) {
+        match (self.helpers.scanline, self.helpers.cycle) {
             (0.., 257) => {
                 self.sprite_scanline = [OamEntry::invisible(); 8];
-                self.sprite_count = 0;
+                self.helpers.sprite_count = 0;
 
                 let mut sprite_zero = true;
-                self.sprite_zero_hit_possible = false;
+                self.helpers.sprite_zero_hit_possible = false;
                 for sprite in self.oam.get_entries() {
-                    let diff = (self.scanline as i16) - (sprite.y as i16);
+                    let diff = (self.helpers.scanline as i16) - (sprite.y as i16);
 
                     if diff >= 0 && diff < if self.ppu_controls.control.sprite_size() { 16 } else { 8 } {
-                        if self.sprite_count < 8 {
+                        if self.helpers.sprite_count < 8 {
                             if sprite_zero {
-                                self.sprite_zero_hit_possible = true;
+                                self.helpers.sprite_zero_hit_possible = true;
                             }
-                            self.sprite_scanline[self.sprite_count as usize] = *sprite;
-                            self.sprite_count += 1;
+                            self.sprite_scanline[self.helpers.sprite_count as usize] = *sprite;
+                            self.helpers.sprite_count += 1;
                         } else {
                             self.ppu_controls.status.set_sprite_overflow(true);
                             break;
@@ -306,7 +306,7 @@ impl PPU {
             },
 
             (0.., 340) => {
-                for i in 0..(self.sprite_count as usize) {
+                for i in 0..(self.helpers.sprite_count as usize) {
                     let mut sprite_pattern_bits_lo: u8 = 0;
                     let mut sprite_pattern_bits_hi: u8 = 0;
                     let sprite_pattern_addr_lo: u16;
@@ -319,7 +319,7 @@ impl PPU {
                             sprite_pattern_addr_lo =
                                 ((self.ppu_controls.control.pattern_sprite() as u16) << 12) |
                                 ((self.sprite_scanline[i].id as u16) << 4) |
-                                (self.scanline as u16 - self.sprite_scanline[i].y as u16); // ? Can't this be negative?
+                                (self.helpers.scanline as u16 - self.sprite_scanline[i].y as u16); // ? Can't this be negative?
 
 
                         } else {
@@ -327,27 +327,27 @@ impl PPU {
                             sprite_pattern_addr_lo =
                                 ((self.ppu_controls.control.pattern_sprite() as u16) << 12) |
                                 ((self.sprite_scanline[i].id as u16) << 4) |
-                                (7 - (self.scanline as u16 - self.sprite_scanline[i].y as u16));
+                                (7 - (self.helpers.scanline as u16 - self.sprite_scanline[i].y as u16));
                         }
                     } else {
                         if !(self.sprite_scanline[i].attribute.nth_flag(7)) {
                             // sprite not flipped vertically
-                            if (self.scanline as u16) - (self.sprite_scanline[i].y as u16)  < 8 {
+                            if (self.helpers.scanline as u16) - (self.sprite_scanline[i].y as u16)  < 8 {
                                 // reading top half
                                 sprite_pattern_addr_lo = 
                                     (self.sprite_scanline[i].id.nth_bit::<u16>(0) << 12) |
                                     ((((self.sprite_scanline[i].id & 0xFE) + 1) as u16) << 4) |
-                                    ((self.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
+                                    ((self.helpers.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
                             } else {
                                 // reading bottom top of tile
                                 sprite_pattern_addr_lo = 
                                     (self.sprite_scanline[i].id.nth_bit::<u16>(0) << 12) |
                                     ((self.sprite_scanline[i].id as u16) << 4) |
-                                    ((self.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
+                                    ((self.helpers.scanline as u16 - self.sprite_scanline[i].y as u16) & 0x07);
                             }
                         } else {
                             // sprite IS flipped vertically
-                            if (self.scanline as u16) - (self.sprite_scanline[i].y as u16)  < 8 {
+                            if (self.helpers.scanline as u16) - (self.sprite_scanline[i].y as u16)  < 8 {
 
                             } else {
 
@@ -368,8 +368,8 @@ impl PPU {
                         sprite_pattern_bits_hi = flip_byte(sprite_pattern_bits_hi);
                     }
                     
-                    self.sprite_shifter_lo[i] = sprite_pattern_bits_lo;
-                    self.sprite_shifter_hi[i] = sprite_pattern_bits_hi;
+                    self.helpers.sprite_shifter_lo[i] = sprite_pattern_bits_lo;
+                    self.helpers.sprite_shifter_hi[i] = sprite_pattern_bits_hi;
 
                     
 
@@ -384,7 +384,7 @@ impl PPU {
         // background rendering is disabled, the pixel and palette combine
         // to form 0x00. This will fall through the colour tables to yield
         // the current background colour in effect
-        if matches!(self.cycle, 1..=256) && matches!(self.scanline, 0..240) {
+        if matches!(self.helpers.cycle, 1..=256) && matches!(self.helpers.scanline, 0..240) {
             let mut bg_pixel: u8 = 0x00;
             let mut bg_palette: u8 = 0x00;
 
@@ -400,15 +400,15 @@ impl PPU {
     
                 // Select Plane pixels by extracting from the shifter 
                 // at the required location. 
-                let p0_pixel: u8 = ((self.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
-                let p1_pixel: u8 = ((self.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
+                let p0_pixel: u8 = ((self.helpers.bg_shifter_pattern_lo & bit_mux) > 0) as u8;
+                let p1_pixel: u8 = ((self.helpers.bg_shifter_pattern_hi & bit_mux) > 0) as u8;
     
                 // Combine to form pixel index
                 bg_pixel = (p1_pixel << 1) | p0_pixel;
     
                 // Get palette
-                let bg_pal0: u8 = ((self.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
-                let bg_pal1: u8 = ((self.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
+                let bg_pal0: u8 = ((self.helpers.bg_shifter_attrib_lo & bit_mux) > 0) as u8;
+                let bg_pal1: u8 = ((self.helpers.bg_shifter_attrib_hi & bit_mux) > 0) as u8;
                 bg_palette = (bg_pal1 << 1) | bg_pal0;
 
                 // self.get_color_value_from_pallet_ram(bg_palette, bg_pixel)
@@ -419,12 +419,12 @@ impl PPU {
             let mut fg_priority: bool = true;
 
             if self.ppu_controls.mask.render_sprites() {
-                self.sprite_zero_being_rendered = false;
+                self.helpers.sprite_zero_being_rendered = false;
 
-                for i in 0..(self.sprite_count as usize) {
+                for i in 0..(self.helpers.sprite_count as usize) {
                     if self.sprite_scanline[i].x == 0 {
-                        let fg_pixel_lo = self.sprite_shifter_lo[i].nth_bit::<u8>(7);
-                        let fg_pixel_hi = self.sprite_shifter_hi[i].nth_bit::<u8>(7);
+                        let fg_pixel_lo = self.helpers.sprite_shifter_lo[i].nth_bit::<u8>(7);
+                        let fg_pixel_hi = self.helpers.sprite_shifter_hi[i].nth_bit::<u8>(7);
                         fg_pixel = (fg_pixel_hi << 1) | fg_pixel_lo;
 
                         fg_palette = (self.sprite_scanline[i].attribute & 0x03) + 0x04;
@@ -432,7 +432,7 @@ impl PPU {
                         
                         if fg_pixel != 0 {
                             if i == 0 {
-                                self.sprite_zero_being_rendered = true;
+                                self.helpers.sprite_zero_being_rendered = true;
                             }
                             break;
                         }
@@ -447,17 +447,17 @@ impl PPU {
                 (_, _) => {
                     let mask = self.ppu_controls.mask;
 
-                    if self.sprite_zero_hit_possible &&
-                        self.sprite_zero_being_rendered &&
+                    if self.helpers.sprite_zero_hit_possible &&
+                        self.helpers.sprite_zero_being_rendered &&
                         mask.render_background() &&
                         mask.render_sprites()
                     {
                         if !(mask.render_background_left() || mask.render_sprites_left()) {
-                            if matches!(self.cycle, 9..258) {
+                            if matches!(self.helpers.cycle, 9..258) {
                                 self.ppu_controls.status.set_sprite_zero_hit(true);
                             }
                         } else {
-                            if matches!(self.cycle, 1..258) {
+                            if matches!(self.helpers.cycle, 1..258) {
                                 self.ppu_controls.status.set_sprite_zero_hit(true);
                             }
                         }
@@ -475,22 +475,25 @@ impl PPU {
             
             // Now we have a final pixel colour, and a palette for this cycle
             // of the current scanline. Let's at long last, draw that ^&%*er :P
-            screen.set_pixel((self.cycle - 1) as usize, self.scanline as usize, color);
+            screen.set_pixel((self.helpers.cycle - 1) as usize, self.helpers.scanline as usize, color);
         }    
 
         // Advance renderer - it never stops, it's relentless
-        self.cycle += 1;
+        self.helpers.cycle += 1;
 
-        if self.cycle >= CYCLE_NUMBER {
-            self.cycle = 0;
-            self.scanline += 1;
-            if self.scanline >= SCANLINE_NUMBER {
-                self.scanline = -1;
-                self.frame_complete = true;
+        if self.helpers.cycle >= CYCLE_NUMBER {
+            self.helpers.cycle = 0;
+            self.helpers.scanline += 1;
+            if self.helpers.scanline >= SCANLINE_NUMBER {
+                self.helpers.scanline = -1;
+                self.helpers.frame_complete = true;
             }
         }
     }
-    
+   
+}
+
+impl RenderingHelpers {
     // Prime the "in-effect" background tile shifters ready for outputting next
     // 8 pixels in scanline. 
     fn load_background_shifters(&mut self) {	
@@ -520,8 +523,8 @@ impl PPU {
 
     // All but 1 of the secanlines is visible to the user. The pre-render scanline
     // at -1, is used to configure the "shifters" for the first visible scanline, 0.
-    fn update_shifters(&mut self) {
-        if self.ppu_controls.mask.render_background() {
+    fn update_shifters(&mut self, ppu_controls: &PPUControlRegisters, sprite_scanline: &mut [OamEntry; 8]) {
+        if ppu_controls.mask.render_background() {
             // Shifting background tile pattern row
             self.bg_shifter_pattern_lo <<= 1;
             self.bg_shifter_pattern_hi <<= 1;
@@ -531,10 +534,10 @@ impl PPU {
             self.bg_shifter_attrib_hi <<= 1;
         }
 
-        if self.ppu_controls.mask.render_sprites() && self.cycle >= 1 && self.cycle < 258 {
+        if ppu_controls.mask.render_sprites() && self.cycle >= 1 && self.cycle < 258 {
             for i in 0..(self.sprite_count as usize) {
-                if self.sprite_scanline[i].x > 0 {
-                    self.sprite_scanline[i].x -= 1;
+                if sprite_scanline[i].x > 0 {
+                    sprite_scanline[i].x -= 1;
                 } else {
                     self.sprite_shifter_hi[i] <<= 1;
                     self.sprite_shifter_lo[i] <<= 1;
@@ -648,10 +651,3 @@ impl PPUControlRegisters {
 }
 
 
-fn flip_byte(b: u8) -> u8 {
-    let b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
-    let b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
-    let b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
-
-    b
-}

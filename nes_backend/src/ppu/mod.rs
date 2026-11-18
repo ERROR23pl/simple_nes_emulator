@@ -17,66 +17,32 @@ pub struct PPU {
     palette: [u8; 32],
     pub ppu_controls: PPUControlRegisters,
     
-    // helper fields needed for emulation
-    scanline: i16,
-    cycle: u16,
-    pub frame_complete: bool,
-    pub nmi: bool,
-
-    // helper for rendering
-    bg_next_tile_id: u8,
-	bg_next_tile_attrib: u8,
-	bg_next_tile_lsb: u8,
-	bg_next_tile_msb: u8,
-
-	bg_shifter_pattern_lo: u16,
-	bg_shifter_pattern_hi: u16,
-	bg_shifter_attrib_lo: u16,
-	bg_shifter_attrib_hi: u16,
-
     // Object Attribute Memory (OAM, used for sprites AKA foreground graphics)
     pub oam: OAM,
     pub oam_address: u8,
     sprite_scanline: [OamEntry; 8],
-    sprite_count: u8,
-    sprite_shifter_lo: [u8; 8],
-    sprite_shifter_hi: [u8; 8],
-    sprite_zero_hit_possible: bool,
-    sprite_zero_being_rendered: bool,
+
+    // helper for rendering
+    helpers: RenderingHelpers,    
 }
 
-impl PPU {
-    pub fn new() -> Self {
-        PPU {
+impl Default for PPU {
+    fn default() -> Self {
+        Self {
             name_table: [[0; 1024]; 2],
             palette: [0; 32],
             ppu_controls: PPUControlRegisters::default(),
-            
-            scanline: 0,
-            cycle:0,
-            frame_complete: false,
-            nmi: false,
-            
-            bg_next_tile_id: 0x00,
-            bg_next_tile_attrib: 0x00,
-            bg_next_tile_lsb: 0x00,
-            bg_next_tile_msb: 0x00,
-            bg_shifter_pattern_lo: 0x0000,
-            bg_shifter_pattern_hi: 0x0000,
-            bg_shifter_attrib_lo: 0x0000,
-            bg_shifter_attrib_hi: 0x0000,
 
             oam: OAM::default(),
             oam_address: 0,
             sprite_scanline: [OamEntry::default(); 8],
-            sprite_count: 0,
-            sprite_shifter_lo: [0; 8],
-            sprite_shifter_hi: [0; 8],
-            sprite_zero_hit_possible: false,
-            sprite_zero_being_rendered: false,
+
+            helpers: RenderingHelpers::default(),
         }
     }
-    
+}
+
+impl PPU {
     pub fn read(&self, address: u16, cartridge: &Cartridge) -> u8 {
         match address {
             // pattern memory is located on the cardridge
@@ -212,4 +178,50 @@ impl PPU {
         if addr == 0x001C { addr = 0x000C };
         self.palette[addr as usize] & (if self.ppu_controls.mask.grayscale() { 0x30 } else { 0x3F })
     }
+}
+
+impl PPU {
+    pub fn nmi(&self) -> &bool {
+        &self.helpers.nmi
+    }
+
+    pub fn set_nmi(&mut self, value: bool) {
+        self.helpers.nmi = value;
+    }
+
+    pub fn check_frame_complete_and_toggle(&mut self) -> bool {
+        if self.helpers.frame_complete {
+            self.helpers.frame_complete = false;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct RenderingHelpers {
+    // overall rendering state
+    scanline: i16,
+    cycle: u16,
+    pub frame_complete: bool,
+    pub nmi: bool,
+
+    // background rendering
+    bg_next_tile_id: u8,
+	bg_next_tile_attrib: u8,
+	bg_next_tile_lsb: u8,
+	bg_next_tile_msb: u8,
+
+	bg_shifter_pattern_lo: u16,
+	bg_shifter_pattern_hi: u16,
+	bg_shifter_attrib_lo: u16,
+	bg_shifter_attrib_hi: u16,
+
+    // foreground rendering
+    sprite_count: u8,
+    sprite_shifter_lo: [u8; 8],
+    sprite_shifter_hi: [u8; 8],
+    sprite_zero_hit_possible: bool,
+    sprite_zero_being_rendered: bool,
 }

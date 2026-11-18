@@ -22,7 +22,7 @@ pub struct NES {
 impl NES {
     pub fn new(cartridge: Cartridge) -> Self {
         Self {
-            cpu: CPU::new(cartridge, PPU::new()),
+            cpu: CPU::new(cartridge, PPU::default()),
 
             clock_count: 0,
             frame_count: 0,
@@ -71,8 +71,8 @@ impl NES {
             }
         }
 
-        if self.cpu.ppu.nmi {
-            self.cpu.ppu.nmi = false;
+        if *self.cpu.ppu.nmi() {
+            self.cpu.ppu.set_nmi(false);
             self.cpu.non_maskable_interupt_request();
         }
 
@@ -96,12 +96,12 @@ impl NES {
     }
 
     pub fn check_frame_complete_and_toggle(&mut self) -> bool {
-        if self.cpu.ppu.frame_complete {
-            self.cpu.ppu.frame_complete = false;
+        let frame_complete = self.cpu.ppu.check_frame_complete_and_toggle();
+
+        if frame_complete {
             self.frame_count += 1;
-            true
-        } else {
-            false
         }
+
+        frame_complete
     }
 }
