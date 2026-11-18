@@ -1,10 +1,12 @@
 mod ui;
 mod utils;
 mod controller;
+mod debug;
 
 // crate imports
 use crate::app::utils::ROMLoadError;
 use controller::*;
+use debug::*;
 use nes_backend::{nes::NES, cpu::disassembler::*};
 use utils::display::{Screen, BasicPixelBuffer};
 
@@ -33,6 +35,9 @@ pub struct App {
 
     #[serde(skip)]
     nes: Option<NES>,
+
+    #[serde(skip)]
+    controller_state: [ControllerState; 2],
     
     // todo: instructions should be part of NES
     #[serde(skip)]
@@ -51,6 +56,8 @@ impl App {
             nes_screen: Screen::new(&cc.egui_ctx, "nes screen", 256, 240),
             pattern_screen: Screen::new(&cc.egui_ctx, "pattern screen", 256, 128),
             nes: None,
+            controller_state: Default::default(),
+
             instructions: None,
             recent_roms: utils::FixedSizeQueue::default(),
             events: Events::default(),
@@ -84,6 +91,7 @@ impl eframe::App for App {
         self.main_ui(ctx);        
     }
 }
+
 #[derive(Default)]
 pub struct Events {
     file_loading_error_modal: Option<ROMLoadError>,
@@ -118,36 +126,4 @@ impl Default for ShowSettings {
         Self { pattern_memory: true, cpu_state: true, program_counter: true, ram: true, oam: true }
     }
 }
-
-#[derive(serde::Serialize)]
-pub struct DebugState {
-    program_state_offset: usize,
-    ram_page_number: usize,
-    ram_editing: bool,
-    chosen_debug_palette: u8,
-    running_mode: RunningMode,
-    controller_state: [ControllerState; 2],
-}
-
-impl Default for DebugState {
-    fn default() -> Self {
-        Self {
-            program_state_offset: 5,
-            ram_page_number: 0,
-            ram_editing: false,
-            chosen_debug_palette: 0,
-            running_mode: RunningMode::Normal,
-            controller_state: Default::default(),
-        }
-    }
-}
-
-#[derive(Default, serde::Serialize)]
-pub enum RunningMode {
-    #[default]
-    Normal,
-    StepByStep,
-    CyclesPerFrame(u64),
-}
-
 

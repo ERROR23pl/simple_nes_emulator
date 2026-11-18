@@ -1,4 +1,5 @@
 use super::*;
+use super::debug::DebugState;
 
 #[derive(serde::Serialize)]
 pub struct ControllerMapping {
@@ -72,7 +73,7 @@ impl App {
     fn save_controller_state(&mut self, ctx: &egui::Context, player: usize) {
         let mapping = &self.app_settings.controller_mapping[player];
 
-        self.debug_state.controller_state[player] = ctx.input(|i| ControllerState {
+        self.controller_state[player] = ctx.input(|i| ControllerState {
             a:      i.key_down(mapping.a),
             b:      i.key_down(mapping.b),
             select: i.key_down(mapping.select),
@@ -87,7 +88,7 @@ impl App {
     fn load_controller_state_into_nes(&mut self, player: usize) {
         let Some(ref mut nes) = self.nes else { return; };
 
-        let controller_state = &self.debug_state.controller_state[player];
+        let controller_state = &self.controller_state[player];
         let input_buttons = [
             controller_state.a,
             controller_state.b,

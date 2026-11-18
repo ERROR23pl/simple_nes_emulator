@@ -297,7 +297,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state[0].up),
+                button_color(self.controller_state[0].up),
             );
 
             // Down
@@ -307,7 +307,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state[0].down),
+                button_color(self.controller_state[0].down),
             );
 
             // Left
@@ -317,7 +317,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state[0].left),
+                button_color(self.controller_state[0].left),
             );
 
             // Right
@@ -327,7 +327,7 @@ impl crate::App {
                     Vec2::splat(dpad_size),
                 ),
                 2.0,
-                button_color(self.debug_state.controller_state[0].right),
+                button_color(self.controller_state[0].right),
             );
 
             // =========================
@@ -349,13 +349,13 @@ impl crate::App {
             painter.rect_filled(
                 select_rect,
                 4.0,
-                button_color(self.debug_state.controller_state[0].select),
+                button_color(self.controller_state[0].select),
             );
 
             painter.rect_filled(
                 start_rect,
                 4.0,
-                button_color(self.debug_state.controller_state[0].start),
+                button_color(self.controller_state[0].start),
             );
 
             // =========================
@@ -367,13 +367,13 @@ impl crate::App {
             painter.circle_filled(
                 Pos2::new(button_center.x - 25.0, button_center.y),
                 18.0,
-                button_color(self.debug_state.controller_state[0].b),
+                button_color(self.controller_state[0].b),
             );
 
             painter.circle_filled(
                 Pos2::new(button_center.x + 25.0, button_center.y),
                 18.0,
-                button_color(self.debug_state.controller_state[0].a),
+                button_color(self.controller_state[0].a),
             );
 
             // Optional outlines
